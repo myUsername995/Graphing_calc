@@ -6,8 +6,6 @@ USER MANUAL:
 Inequalities: <, <=, >, >=
 Comparisons: or (||), and (&&), xor (^), set difference (\ or \\)
 
-i made some changes here!!!
-
 IMPORTANT KEYS:
 -Enter: Makes you go onto a new line. If you press enter at the start of the string, the new line will appear above. Anywhere else, it 
 will appear below. 
