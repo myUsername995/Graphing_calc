@@ -743,6 +743,7 @@ int main(int argc, char* argv[]){
             }
         }
 
+        int dashLength1 = 50; int dashLength2 = 50; bool drawDash1 = false; bool drawDash2 = false;
         // Go through every pixel on the screen and colour them based on the 4 corners
         for (int i = 0; i < comparisons.size(); i++){
             int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
@@ -784,31 +785,51 @@ int main(int argc, char* argv[]){
                     else if (functions[index2].relationSign == ">") colorPixel2 = allCornersEqual2 && a2 == POSITIVE;
                     else if (functions[index2].relationSign == ">=") colorPixel2 = !allCornersEqual2 || a2 == POSITIVE;
 
-                    // Represent the "=" line with a solid line, while the rest of the function is lighter
-                    // Always draw this line (even when evaluating "<" or ">" functions, where technically there should be a 
-                    // broken line)
-                    bool colorSolid = !allCornersEqual1 || !allCornersEqual2;
-                    int a = colorSolid ? 255 : 127;
+                    // Represent strict inequality with a dashed line (<) and the other inequality with a normal line (<=)
+                    bool colorSolid1 = !allCornersEqual1;
+                    bool colorSolid2 = !allCornersEqual2;
+                    bool isStrict1 = functions[index1].relationSign == "<" || functions[index1].relationSign == ">";
+                    bool isStrict2 = functions[index2].relationSign == "<" || functions[index2].relationSign == ">";
+
+                    // If the current point is on the boundary line, subtract from dashLength once 
+                    if (colorSolid1 && isStrict1) dashLength1--;
+                    if (colorSolid2 && isStrict2) dashLength2--;
+                    // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
+                    // the line look dashed
+                    if (dashLength1 <= 0){
+                        drawDash1 = !drawDash1; dashLength1 = 50;
+                    }
+                    if (dashLength2 <= 0){
+                        drawDash2 = !drawDash2; dashLength2 = 50;
+                    }
+
+                    // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
+                    // to draw a full line on a non-strict line
+                    bool colorBoundary1 = colorSolid1 && (drawDash1 || !isStrict1);
+                    bool colorBoundary2 = colorSolid2 && (drawDash2 || !isStrict2);
+                    bool colorBoundary = colorBoundary1 || colorBoundary2;
+
+                    int a = colorBoundary ? 255 : 127;
 
                     SDL_Color c = comparisons[i].clr;
                     // Decrease on every iteration
                     if (comparisons[i].boolean == AND){
-                        if (colorPixel1 && colorPixel2 || colorSolid){
+                        if (colorPixel1 && colorPixel2 || colorBoundary){
                             setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
                         }
                     }
                     else if (comparisons[i].boolean == OR){
-                        if (colorPixel1 || colorPixel2 || colorSolid){
+                        if (colorPixel1 || colorPixel2 || colorBoundary){
                             setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
                         }
                     }
                     else if (comparisons[i].boolean == DIFF){
-                        if (colorPixel1 && !colorPixel2 || colorSolid){
+                        if (colorPixel1 && !colorPixel2 || colorBoundary){
                             setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
                         }
                     }
                     else if (comparisons[i].boolean == XOR){
-                        if (colorPixel1 ^ colorPixel2 || colorSolid){
+                        if (colorPixel1 ^ colorPixel2 || colorBoundary){
                             setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
                         }
                     }
