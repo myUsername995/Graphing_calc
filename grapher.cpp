@@ -38,12 +38,17 @@ is either negative or positive (0 counts as negative). This is used to ensure th
 bunch of points. It then goes through all the elements in the comparisons array, and compares two functions at a time individually per 
 pixel. It draws the resulting pixels to a texture, which is then rendered on the screen.
 
+Miscellanous facts:
 The rest of the things inside this project I won't explain, such as the way the axis are rendered or how I implemented the moving 
 around and zooming, because I've just copied that from the old graphing project, lol. I still understand it tho, and hopefully 
 when you're reading this you still understand it. If not, go watch a video on it or something.
 
 Besides the way the numbers are plotted on the axis is a mystery to me, I just copied it from the old project.
 
+The dashed lines are rendered like this: for the first 50 (or whatever number) of points that are on the boundary, the program draws 
+a pixel, and then for the next 50 it doesn't draw a pixel, then it draws pixels again and so on. You might think that the dashed 
+lines look weird and move around in ways that they shouldn't do, but if you look at desmos, it looks the same (besides the random gaps 
+in some of the dashed lines).
 */
 
 
@@ -76,12 +81,12 @@ std::array<SDL_Color, 9> colors = {
 };
 
 enum States {NEGATIVE, POSITIVE};
-
 enum Booleans {OR, AND, XOR, DIFF};
+enum Comparators {EQ, LT, LTE, GT, GTE};
 
 struct Function {
     Expression expr;
-    std::string relationSign;
+    Comparators relationSign;
 };
 
 struct compare {
@@ -226,27 +231,27 @@ std::vector<Function> getFunctions(std::vector<std::string> strs){
         // Find the separating relation sign
         for (int i = 0; i < str.size() - 1; i++){
             if (str[i] == '<' && str[i+1] == '='){
-                index = i; length = 2; functions[idx].relationSign = "<=";
+                index = i; length = 2; functions[idx].relationSign = LTE;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '>' && str[i+1] == '='){
-                index = i; length = 2; functions[idx].relationSign = ">=";
+                index = i; length = 2; functions[idx].relationSign = GTE;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '='){
-                index = i; length = 1; functions[idx].relationSign = "=";
+                index = i; length = 1; functions[idx].relationSign = EQ;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '<'){
-                index = i; length = 1; functions[idx].relationSign = "<";
+                index = i; length = 1; functions[idx].relationSign = LT;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '>'){
-                index = i; length = 1; functions[idx].relationSign = ">";
+                index = i; length = 1; functions[idx].relationSign = GT;
                 foundRelationSign = true;
                 break;
             }
@@ -460,7 +465,7 @@ int main(int argc, char* argv[]){
 
     int letterTrack = 0;
 
-    std::vector<std::string> userInput = {"func a = y <= x", "func b = y <= -x", "comp a || a", "comp b || b"}; //{"func f(x) = y <= m * x + b", "var m = 2", "var b = 10", "comp f(x) || f(x)"};
+    std::vector<std::string> userInput = {"func a = y < -x^3-2*x^2+2*x+1", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;
@@ -743,15 +748,20 @@ int main(int argc, char* argv[]){
             }
         }
 
-        int dashLength1 = 50; int dashLength2 = 50; bool drawDash1 = false; bool drawDash2 = false;
+        int dashLength = 20;
         // Go through every pixel on the screen and colour them based on the 4 corners
         for (int i = 0; i < comparisons.size(); i++){
+            int dashLength1 = dashLength; int dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
             int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
+
+            // Check if a function is strict or not
+            bool isStrict1 = functions[index1].relationSign == LT || functions[index1].relationSign == GT;
+            bool isStrict2 = functions[index2].relationSign == LT || functions[index2].relationSign == GT;
 
             const Grid& grid1 = gridSigns[index1];
             const Grid& grid2 = gridSigns[index2];
-            for (int x = 0; x < WINDOW_WIDTH; x++){
-                for (int y = 0; y < WINDOW_HEIGHT; y++){
+            for (int y = 0; y < WINDOW_WIDTH; y++){
+                for (int x = 0; x < WINDOW_HEIGHT; x++){
                     int a1 = grid1[y][x];
                     int b1 = grid1[y][x + 1];
                     int c1 = grid1[y + 1][x];
@@ -763,75 +773,57 @@ int main(int argc, char* argv[]){
                     int d2 = grid2[y + 1][x + 1];
 
                     bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
-                    bool allCornersNegative1 = allCornersEqual1 && a1 == NEGATIVE;
-                    bool allCornersPositive1 = allCornersEqual1 && a1 == POSITIVE;
-
                     bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
-                    bool allCornersNegative2 = allCornersEqual1 && a2 == NEGATIVE;
-                    bool allCornersPositive2 = allCornersEqual1 && a2 == POSITIVE;
 
                     // Decide if we should color the current pixel for both functions
                     bool colorPixel1, colorPixel2;
+                    switch (functions[index1].relationSign){
+                        case EQ: colorPixel1 = !allCornersEqual1; break;
+                        case LT: colorPixel1 = allCornersEqual1 && a1 == NEGATIVE; break;
+                        case LTE: colorPixel1 = !allCornersEqual1 || a1 == NEGATIVE; break;
+                        case GT: colorPixel1 = allCornersEqual1 && a1 == POSITIVE; break;
+                        case GTE: colorPixel1 = !allCornersEqual1 || a1 == POSITIVE; break;
+                    }
 
-                    if (functions[index1].relationSign == "=") colorPixel1 = !allCornersEqual1;
-                    else if (functions[index1].relationSign == "<") colorPixel1 = allCornersEqual1 && a1 == NEGATIVE;
-                    else if (functions[index1].relationSign == "<=") colorPixel1 = !allCornersEqual1 || a1 == NEGATIVE;
-                    else if (functions[index1].relationSign == ">") colorPixel1 = allCornersEqual1 && a1 == POSITIVE;
-                    else if (functions[index1].relationSign == ">=") colorPixel1 = !allCornersEqual1 || a1 == POSITIVE;
-
-                    if (functions[index2].relationSign == "=") colorPixel2 = !allCornersEqual2;
-                    else if (functions[index2].relationSign == "<") colorPixel2 = allCornersEqual2 && a2 == NEGATIVE;
-                    else if (functions[index2].relationSign == "<=") colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE;
-                    else if (functions[index2].relationSign == ">") colorPixel2 = allCornersEqual2 && a2 == POSITIVE;
-                    else if (functions[index2].relationSign == ">=") colorPixel2 = !allCornersEqual2 || a2 == POSITIVE;
+                    switch (functions[index1].relationSign){
+                        case EQ: colorPixel2 = !allCornersEqual2; break;
+                        case LT: colorPixel2 = allCornersEqual2 && a2 == NEGATIVE; break;
+                        case LTE: colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE; break;
+                        case GT: colorPixel2 = allCornersEqual2 && a2 == POSITIVE; break;
+                        case GTE: colorPixel2 = !allCornersEqual2 || a2 == POSITIVE; break;
+                    }
 
                     // Represent strict inequality with a dashed line (<) and the other inequality with a normal line (<=)
+                    // ColorSolids -> same expression as it would be for just a normal straight line (=)
                     bool colorSolid1 = !allCornersEqual1;
                     bool colorSolid2 = !allCornersEqual2;
-                    bool isStrict1 = functions[index1].relationSign == "<" || functions[index1].relationSign == ">";
-                    bool isStrict2 = functions[index2].relationSign == "<" || functions[index2].relationSign == ">";
 
                     // If the current point is on the boundary line, subtract from dashLength once 
-                    if (colorSolid1 && isStrict1) dashLength1--;
-                    if (colorSolid2 && isStrict2) dashLength2--;
+                    if (colorSolid1 && isStrict1){ dashLength1--; }
+                    if (colorSolid2 && isStrict2){ dashLength2--; }
                     // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
                     // the line look dashed
-                    if (dashLength1 <= 0){
-                        drawDash1 = !drawDash1; dashLength1 = 50;
+                    if (dashLength1 < 0){
+                        drawDash1 = !drawDash1; dashLength1 = dashLength;
                     }
-                    if (dashLength2 <= 0){
-                        drawDash2 = !drawDash2; dashLength2 = 50;
+                    if (dashLength2 < 0){
+                        drawDash2 = !drawDash2; dashLength2 = dashLength;
                     }
 
                     // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
                     // to draw a full line on a non-strict line
-                    bool colorBoundary1 = colorSolid1 && (drawDash1 || !isStrict1);
-                    bool colorBoundary2 = colorSolid2 && (drawDash2 || !isStrict2);
+                    bool colorBoundary1 = (colorSolid1 && !isStrict1) || (colorSolid1 && drawDash1 && isStrict1);
+                    bool colorBoundary2 = (colorSolid2 && !isStrict2) || (colorSolid2 && drawDash2 && isStrict2);
                     bool colorBoundary = colorBoundary1 || colorBoundary2;
 
                     int a = colorBoundary ? 255 : 127;
 
                     SDL_Color c = comparisons[i].clr;
-                    // Decrease on every iteration
-                    if (comparisons[i].boolean == AND){
-                        if (colorPixel1 && colorPixel2 || colorBoundary){
-                            setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
-                        }
-                    }
-                    else if (comparisons[i].boolean == OR){
-                        if (colorPixel1 || colorPixel2 || colorBoundary){
-                            setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
-                        }
-                    }
-                    else if (comparisons[i].boolean == DIFF){
-                        if (colorPixel1 && !colorPixel2 || colorBoundary){
-                            setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
-                        }
-                    }
-                    else if (comparisons[i].boolean == XOR){
-                        if (colorPixel1 ^ colorPixel2 || colorBoundary){
-                            setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a);
-                        }
+                    switch (comparisons[i].boolean){
+                        case AND: if ((colorPixel1 && colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
+                        case OR: if ((colorPixel1 || colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
+                        case DIFF: if ((colorPixel1 && !colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
+                        case XOR: if ((colorPixel1 ^ colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
                     }
                 }
             }
