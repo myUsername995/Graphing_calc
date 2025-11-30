@@ -118,37 +118,56 @@ std::string to_string_with_precision(double value, int precision) {
     return out.str();
 }
 
-// Return the bounding rectangle so we can position other texts accordingly
-SDL_FRect renderTexts(GLuint shader, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){
-    SDL_Surface* surface = TTF_RenderText_Blended(font, str.c_str(), str.length(), color);
-    if (!surface) return {pos.x, pos.y, 0, 0};
+SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::string& str, SDL_FRect& pos, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
 
-    SDL_Surface* rgbaSurf = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA8888);
+    pos.w = surface->w;
+    pos.h = surface->h;
+
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
     SDL_DestroySurface(surface);
 
-    int w = rgbaSurf->w;
-    int h = rgbaSurf->h;
+    return texture;
+}
 
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurf->pixels);
+SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+
+    return {(float)surface->w, (float)surface->h};
+}
+
+// Return the bounding rectangle so we can position other texts accordingly
+SDL_FRect renderTexts(GLuint shader, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){ 
+    SDL_Surface* surface = TTF_RenderText_Blended(font, str.c_str(), str.length(), color); 
+    if (!surface) return {pos.x, pos.y, 0, 0}; 
+    SDL_Surface* rgbaSurf = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA8888); 
+    SDL_DestroySurface(surface); 
+
+    int w = rgbaSurf->w; 
+    int h = rgbaSurf->h; 
+
+    GLuint tex; 
+    glGenTextures(1, &tex); 
+    glBindTexture(GL_TEXTURE_2D, tex); 
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurf->pixels); 
 
     // Set swizzle so the shader sees Alpha in RED
     GLint swizzleMask[] = { GL_ZERO, GL_ZERO, GL_ZERO, GL_RED };
     glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    SDL_DestroySurface(rgbaSurf);
-
-    GPURenderText(shader, tex, pos.x, pos.y, w, h, color);
+    SDL_DestroySurface(rgbaSurf); 
+    
+    GPURenderText(shader, tex, pos.x, pos.y, w, h, color); 
     glDeleteTextures(1, &tex);
 
-    return {pos.x, pos.y, float(w), float(h)};
+    return {pos.x, pos.y, float(w), float(h)}; 
 }
 
 SDL_FPoint getScreenPos(TTF_Font* font, const std::string& str, int index, SDL_FPoint startPos) {
@@ -1026,7 +1045,10 @@ int main(int argc, char* argv[]){
 
         // Render texts
         std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-        renderTexts(textShader, font, FPSText, {WINDOW_WIDTH - w - 10, 10}, {255, 255, 255});
+
+        int w, h;
+        GLuint tex = GPUCreateTextTexture(font, FPSText, w, h);
+        GPURenderText(textShader, tex, WINDOW_WIDTH - w - 10, 10, w, h, {255, 255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -1043,8 +1065,10 @@ int main(int argc, char* argv[]){
 
             // Render the background and text
             GPURenderLine(shapeShader, 2, prevRect.y + 40, 8, prevRect.y + 40, {255, 255, 255, 127});
-            
-            renderTexts(textShader, font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255});
+
+            int w, h;
+            GLuint tex = GPUCreateTextTexture(font, userInput[i], w, h);
+            GPURenderText(textShader, tex, prevRect.x, prevRect.y + 30, w, h, {255, 255, 255, 255});
 
             // Background rectangle
             GPURenderRect(shapeShader, prevRect.x, prevRect.y, prevRect.w, prevRect.h, background, true);
@@ -1058,6 +1082,13 @@ int main(int argc, char* argv[]){
 
                 GPURenderLine(shapeShader, posX, prevRect.y, posX, prevRect.y + prevRect.h, {255, 255, 255, 127});
             }
+        }
+
+        glClearColor(0,0,0,1);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        {
+            renderTexts(textShader, font, "hii", {100, 100}, {255, 255, 255, 255});
         }
 
         SDL_GL_SwapWindow(window);
