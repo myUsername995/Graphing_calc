@@ -84,8 +84,8 @@ std::array<SDL_Color, 9> colors = {
 };
 
 enum States {NEGATIVE, POSITIVE};
-enum Booleans {OR, AND, XOR, DIFF};
-enum Comparators {EQ, LT, LTE, GT, GTE};
+enum Booleans : uint32_t {OR, AND, XOR, DIFF};
+enum Comparators : uint32_t {EQ, LT, LTE, GT, GTE};
 
 struct Function {
     Expression expr;
@@ -478,6 +478,9 @@ int main(int argc, char* argv[]){
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders//evaluate.comp.glsl"), GL_COMPUTE_SHADER));
+    GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders//combine.comp.glsl"), GL_COMPUTE_SHADER));
+
     // Used to render the graph
     GLuint screenShader = CreateProgram(CompileShader(LoadFile("shaders//screenShader.vert"), GL_VERTEX_SHADER), 
                                         CompileShader(LoadFile("shaders//screenShader.frag"), GL_FRAGMENT_SHADER));
@@ -685,9 +688,24 @@ int main(int argc, char* argv[]){
             }
         }
 
+        std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
+        std::vector<GPUInstruction> GPUInstrs; std::vector<uint32_t> outOffsets; std::vector<uint32_t> outLengths;
+
         if (updateExpressions){
             updateExprs(functions, comparisons, userInput);
             updateExpressions = false;
+
+            for (const auto& elem : functions){
+                exprs.push_back(elem.expr);
+                relationSigns.push_back(elem.relationSign);
+            }
+
+            for (const auto& elem : comparisons){
+                cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
+            }
+
+            packExpressionsToGPU(exprs, GPUInstrs, outOffsets, outLengths);
+            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, functions.size());
         }
 
         // Get mouse state
@@ -776,16 +794,12 @@ int main(int argc, char* argv[]){
         GPURenderLine(shapeShader, p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
-        // void *pixels;
-        // int pitch;
-        // SDL_LockTexture(pixelTex, NULL, &pixels, &pitch);
+        SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
+        SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, zoom, top_left);
+        SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, zoom, top_left);
 
-        // SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
-        // SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, zoom, top_left);
-        // SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, zoom, top_left);
-
-        // double xStep = fabs(dirX.x - start.x);
-        // double yStep = fabs(dirY.y - start.y);
+        double xStep = fabs(dirX.x - start.x);
+        double yStep = fabs(dirY.y - start.y);
 
         // // X and Y are the cordinates in screen cordinates
         // for (int i = 0; i < functions.size(); i++){
@@ -969,6 +983,8 @@ int main(int argc, char* argv[]){
 
         // // Clear the texture to black (RGBA = 0,0,0,255)
         // memset(pixels, 0, pitch * WINDOW_HEIGHT);
+
+        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         // Render the numbers on the axis
         {

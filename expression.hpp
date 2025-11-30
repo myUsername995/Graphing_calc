@@ -39,7 +39,7 @@ typedef enum {
 // Used to classify operations
 enum Operations {
     OP_NEG, OP_ABS, OP_SQRT, OP_LN, OP_LOG, 
-    OP_SIN, OP_COS, OP_TAN, OP_ASIN, OP_ACOS, OP_ATAN, OP_FAC, OP_FLOOR, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_POW, OP_MOD
+    OP_SIN, OP_COS, OP_TAN, OP_ASIN, OP_ACOS, OP_ATAN, OP_FLOOR, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_POW, OP_MOD
 };
 
 typedef struct {

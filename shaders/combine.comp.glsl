@@ -23,20 +23,18 @@ layout(binding=0, rgba8) uniform writeonly image2D outImage;
 uint readGrid(uint funcIndex, int cx, int cy){
     // bounds assumed valid
     uint idx = funcIndex * uint(u_cornerRes.x * u_cornerRes.y) + uint(cy) * uint(u_cornerRes.x) + uint(cx);
-    return grid[idx];
+    return uint(grid[idx]);
 }
 
-bool applyRelation(uint rel, uint allEqual, uint cornerValue) {
-    // rel: REL_EQ=0, REL_LT=1, REL_LTE=2, REL_GT=3, REL_GTE=4
-    bool allCornersEqual = allEqual != 0u;
-    bool allCornersNegative = allCornersEqual && (cornerValue == 0u);
-    bool allCornersPositive = allCornersEqual && (cornerValue == 1u);
+bool applyRelation(uint rel, bool allEqual, uint cornerValue) {
+    bool cornerIsZero = (cornerValue == 0u);
+    bool cornerIsOne  = (cornerValue == 1u);
 
-    if (rel == 0u) return !allCornersEqual;                 // "=" => any sign change inside cell -> color
-    else if (rel == 1u) return allCornersEqual && (cornerValue == 0u); // "<" 
-    else if (rel == 2u) return (!allCornersEqual) || (cornerValue == 0u); // "<="
-    else if (rel == 3u) return allCornersEqual && (cornerValue == 1u); // ">"
-    else if (rel == 4u) return (!allCornersEqual) || (cornerValue == 1u); // ">="
+    if (rel == 0u) return !allEqual;                 
+    else if (rel == 1u) return allEqual && cornerIsZero;
+    else if (rel == 2u) return !allEqual || cornerIsZero;
+    else if (rel == 3u) return allEqual && cornerIsOne;
+    else if (rel == 4u) return !allEqual || cornerIsOne;
     return false;
 }
 
@@ -76,21 +74,19 @@ void main()
         uint rel1 = relSigns[idx1];
         uint rel2 = relSigns[idx2];
 
-        bool color1 = applyRelation(rel1, uint(allEqual1 ? 1u : 0u), corner1);
-        bool color2 = applyRelation(rel2, uint(allEqual2 ? 1u : 0u), corner2);
+        bool color1 = applyRelation(rel1, allEqual1, corner1);
+        bool color2 = applyRelation(rel2, allEqual2, corner2);
 
         bool result = false;
         if (bOp == 0u) result = color1 && color2;       // AND
         else if (bOp == 1u) result = color1 || color2;  // OR
         else if (bOp == 2u) result = color1 && !color2; // DIFF
-        else if (bOp == 3u) result = color1 ^ color2;   // XOR
+        else if (bOp == 3u) result = color1 != color2;   // XOR
 
         if (result) {
             // write a color (R,G,B,A). Example: teal-ish with transparency 127/255
             vec4 c = vec4(0.0, 0.5, 1.0, 0.5); // in normalized floats
-            // convert to uvec4 for RGBA8
-            uvec4 outc = uvec4(uvec3(c.rgb * 255.0), uint(c.a * 255.0));
-            imageStore(outImage, ivec2(gid), vec4(c.rgb, c.a)); // imageStore accepts float vec4 for rgba8 too
+            imageStore(outImage, gid, vec4(c.rgb, c.a));
             // break if we want first matching comparison only:
             // break;
         }

@@ -2,10 +2,6 @@
 // PASS 1: evaluate expressions at every corner sample
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-// bindings must match C++ bindpoints
-layout(std430, binding = 0) readonly buffer InstrSSBO {
-    uint instrs[]; // we will reinterpret as GPUInstruction by manual indexing
-};
 // We'll also expose an instructions-as-bytes view; instead we will read as uvec4 per-instruction:
 layout(std430, binding = 0) readonly buffer InstrView {
     uvec4 rawInstr[]; // one uvec4 per GPUInstruction (16 bytes)
@@ -66,10 +62,7 @@ float applyUnary(uint op, float a)
             return acos(a);
         case 10u: // OP_ATAN
             return atan(a);
-        case 11u: // OP_FAC
-            // factorial not native — approximate using gamma function
-            return tgamma(a + 1.0);
-        case 12u: // OP_FLOOR
+        case 11u: // OP_FLOOR
             return floor(a);
     }
     return a;
@@ -79,24 +72,23 @@ float applyBinary(uint op, float a, float b)
 {
     switch (op)
     {
-        case 13u: // OP_ADD
+        case 12u: // OP_ADD
             return a + b;
-        case 14u: // OP_SUB
+        case 13u: // OP_SUB
             return a - b;
-        case 15u: // OP_MUL
+        case 14u: // OP_MUL
             return a * b;
-        case 16u: // OP_DIV
+        case 15u: // OP_DIV
             return a / b;
-        case 17u: // OP_POW
+        case 16u: // OP_POW
             return pow(a, b);
-        case 18u: // OP_MOD
+        case 17u: // OP_MOD
             return mod(a, b);    // GLSL mod(a,b)
     }
     return 0.0;
 }
 
-void main()
-{
+void main(){
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy); // corner x,y
     uint funcIndex = uint(gl_WorkGroupID.z);     // we dispatched gz = funcCount
     if (gid.x >= u_cornerRes.x || gid.y >= u_cornerRes.y) return;
@@ -118,24 +110,32 @@ void main()
         uint kind = instr_kind(inst);
         if (kind == 0u) { // EXPR_NUMBER
             float v = instr_number(inst);
-            stack[sp++] = v;
+            stack[sp] = v;
+            sp += 1;
         } else if (kind == 2u) { // EXPR_VAR
             int v = instr_var(inst);
-            if (v == 1) stack[sp++] = worldX;
-            else stack[sp++] = worldY;
+            if (v == 1) stack[sp] = worldX;
+            else if (v == 2) stack[sp] = worldY;
+            else stack[sp] = 0.0; // default/fallback
+            sp += 1;
         } else if (kind == 3u) { // EXPR_UNARY
             uint op = instr_op(inst);
-            float a = stack[--sp];
-            stack[sp++] = applyUnary(op, a);
+            float a = stack[sp - 1];
+            sp -= 1;
+            stack[sp] = applyUnary(op, a);
+            sp += 1;
         } else if (kind == 1u) { // EXPR_BINARY
             uint op = instr_op(inst);
-            float b = stack[--sp];
-            float a = stack[--sp];
-            stack[sp++] = applyBinary(op, a, b);
+            float b = stack[sp - 1];
+            sp -= 1;
+            float a = stack[sp - 1];
+            sp -= 1;
+            stack[sp] = applyBinary(op, a, b);
+            sp += 1;
         }
     }
 
-    float result = stack[0]; // final result
+    float result = (sp > 0) ? stack[0] : 0.0; // final result
     // Sign rule from your CPU: sign <= 0 => NEGATIVE (we will store NEGATIVE as 0, POSITIVE as 1)
     uint sign = (result <= 0.0) ? 0u : 1u;
 

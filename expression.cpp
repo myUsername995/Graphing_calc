@@ -298,9 +298,6 @@ static Expr* parse_primary() {
     else if (tok.type == TOKEN_ATAN){
         return parseFunction(OP_ATAN);
     }
-    else if (tok.type == TOKEN_FAC){
-        return parseFunction(OP_FAC);
-    }
     else if (tok.type == TOKEN_FLOOR){
         return parseFunction(OP_FLOOR);
     }
@@ -392,7 +389,6 @@ void printOp(Operations op){
         case OP_ASIN: std::cout << "asin"; break;
         case OP_ACOS: std::cout << "acos"; break;
         case OP_ATAN: std::cout << "atan"; break;
-        case OP_FAC:  std::cout << "fac"; break;
         case OP_FLOOR: std::cout << "floor"; break;
         case OP_ADD: std::cout << "+"; break;
         case OP_SUB: std::cout << "-"; break;
@@ -476,7 +472,6 @@ double eval(const Expression& exprStack) {
                     case OP_ASIN: stack[sp - 1] = asin(val); break;
                     case OP_ACOS: stack[sp - 1] = acos(val); break;
                     case OP_ATAN: stack[sp - 1] = atan(val); break;
-                    case OP_FAC:  stack[sp - 1] = tgamma(val + 1); break;
                     case OP_FLOOR: stack[sp - 1] = floor(val); break;
                 }
                 break;
@@ -592,7 +587,6 @@ void foldConstants(Expression& exprStack){
                         case OP_ASIN: stack[sp - 1].number = asin(val); break;
                         case OP_ACOS: stack[sp - 1].number = acos(val); break;
                         case OP_ATAN: stack[sp - 1].number = atan(val); break;
-                        case OP_FAC:  stack[sp - 1].number = tgamma(val + 1); break;
                         case OP_FLOOR: stack[sp - 1].number = floor(val); break;
                     }
                 }

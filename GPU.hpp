@@ -27,20 +27,22 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
                           std::vector<GPUInstruction>& outInstrs,
                           std::vector<uint32_t>& outOffsets,
                           std::vector<uint32_t>& outLengths);
+
 void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<uint32_t>& offsets,
                             const std::vector<uint32_t>& lengths,
                             const std::vector<Comparison>& comparisons,
                             const std::vector<uint32_t>& relationSigns,
                             size_t funcCount);
-void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, size_t comparisonCount, 
+
+void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY);
 
 std::string LoadFile(const std::string& path);
 GLuint CompileShader(const std::string& source, GLenum shaderType);
 GLuint CreateProgram(GLuint vert, GLuint frag);
+GLuint CreateComputeProgram(GLuint computeShader);
 
-ScreenQuad createScreenQuadAndTexture();
 void drawTexture(GLuint shader, GLuint texture, GLuint vao);
 
 void initTextQuad();

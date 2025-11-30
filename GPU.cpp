@@ -113,7 +113,7 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
 // --- Dispatching compute shaders ---
 // shaderEvaluate: GLuint of the compiled compute shader program for pass 1
 // shaderCombine: GLuint for pass 2
-void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, size_t comparisonCount, GLuint outTex, 
+void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY){
     // Bind program 1 (evaluate)
     glUseProgram(shaderEvaluate);
@@ -136,28 +136,27 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, s
     // Now run combine shader
     glUseProgram(shaderCombine);
 
-    glBindImageTexture(
-        0,           // image unit = 0, matches "binding = 0"
-        outTex,      // the texture name
-        0,           // mip level
-        GL_FALSE,    // not layered
-        0,           // layer
-        GL_WRITE_ONLY,
-        GL_RGBA8     // format, must match shader
-    );
-
+    // Bind output image is already bound to image unit 0
+    // bind any extra uniforms required (e.g. W,H)
     glUniform2i(glGetUniformLocation(shaderCombine, "u_res"), W, H);
     glUniform2i(glGetUniformLocation(shaderCombine, "u_cornerRes"), CORNER_W, CORNER_H);
     glUniform1ui(glGetUniformLocation(shaderCombine, "u_comparisonCount"), comparisonCount);
 
-    // Bind output image is already bound to image unit 0
-    // bind any extra uniforms required (e.g. W,H)
     int cx = (W + 15)/16;
     int cy = (H + 15)/16;
     glDispatchCompute(cx, cy, 1);
 
     // Make sure the image writes are finished before rendering
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
+
+    glUseProgram(screenShader);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, outputTex);
+    glUniform1i(glGetUniformLocation(screenShader, "u_tex"), 0);
+
+    // Fullscreen quad using glDrawArrays + gl_VertexID trick
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 std::string LoadFile(const std::string& path) {
@@ -201,48 +200,22 @@ GLuint CreateProgram(GLuint vert, GLuint frag) {
     return program;
 }
 
-ScreenQuad createScreenQuadAndTexture() {
-    ScreenQuad sq{};
+GLuint CreateComputeProgram(GLuint computeShader){
+    GLuint program = glCreateProgram();
+    glAttachShader(program, computeShader);
+    glLinkProgram(program);
 
-    // -------- texture --------
-    glGenTextures(1, &sq.texture);
-    glBindTexture(GL_TEXTURE_2D, sq.texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLint ok;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(program, 1024, NULL, log);
+        printf("Compute shader link error:\n%s\n", log);
+    }
 
-    // -------- quad VBO/VAO --------
-    float quadVerts[] = {
-        // pos      // uv
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f,
+    glDetachShader(program, computeShader);
 
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f,
-        -1.0f,  1.0f,  0.0f, 1.0f
-    };
-
-    glGenVertexArrays(1, &sq.vao);
-    glGenBuffers(1, &sq.vbo);
-
-    glBindVertexArray(sq.vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, sq.vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
-    glBindVertexArray(0);
-
-    glBindImageTexture(0, sq.texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
-
-    return sq;
+    return program;
 }
 
 void drawTexture(GLuint shader, GLuint texture, GLuint vao) {
