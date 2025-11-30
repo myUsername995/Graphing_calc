@@ -32,8 +32,6 @@ layout(std430, binding = 5) readonly buffer RelSignSSBO {
 uniform vec4 u_screenParams; // (startX, startY, stepX, stepY)
 uniform ivec2 u_res;         // (W, H)
 uniform ivec2 u_cornerRes;   // (W+1, H+1)
-uniform uint u_instrCount;   // total number of instructions (optional)
-uniform uint u_funcCount;    // number of functions
 
 // Instr layout helpers
 uint instr_kind(uvec4 v) { return v.x; }

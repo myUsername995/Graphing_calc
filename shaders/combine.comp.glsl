@@ -16,7 +16,6 @@ layout(std430, binding = 5) readonly buffer RelSignSSBO {
 
 uniform ivec2 u_res;        // W,H
 uniform ivec2 u_cornerRes;  // W+1,H+1
-uniform uint u_funcCount;
 uniform uint u_comparisonCount;
 
 layout(binding=0, rgba8) uniform writeonly image2D outImage;

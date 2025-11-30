@@ -66,6 +66,7 @@ Besides the way the numbers are plotted on the axis is a mystery to me, I just c
 #include <cmath>
 #include "expression.hpp"
 #include "time.hpp"
+#include "GPU.hpp"
 
 #define WINDOW_HEIGHT 800
 #define WINDOW_WIDTH 800
@@ -117,37 +118,37 @@ std::string to_string_with_precision(double value, int precision) {
     return out.str();
 }
 
-SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::string& str, SDL_FRect& pos, SDL_Color color){
-    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+// Return the bounding rectangle so we can position other texts accordingly
+SDL_FRect renderTexts(GLuint shader, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Blended(font, str.c_str(), str.length(), color);
+    if (!surface) return {pos.x, pos.y, 0, 0};
 
-    pos.w = surface->w;
-    pos.h = surface->h;
-
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-
+    SDL_Surface* rgbaSurf = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA8888);
     SDL_DestroySurface(surface);
 
-    return texture;
-}
+    int w = rgbaSurf->w;
+    int h = rgbaSurf->h;
 
-SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str, SDL_Color color){
-    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurf->pixels);
 
-    return {(float)surface->w, (float)surface->h};
-}
+    // Set swizzle so the shader sees Alpha in RED
+    GLint swizzleMask[] = { GL_ZERO, GL_ZERO, GL_ZERO, GL_RED };
+    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
 
-// Return the bounding rectangle so we can position other texts accordingly
-SDL_FRect renderTexts(SDL_Renderer* renderer, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){
-    // Rectangle that has its top left corner at pos.x, pos.y
-    SDL_FRect posRect = {pos.x, pos.y, 0, 0};
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    if (str.empty()) return posRect;
+    SDL_DestroySurface(rgbaSurf);
 
-    SDL_Texture* tex = renderTexture(renderer, font, str, posRect, color);
-    SDL_RenderTexture(renderer, tex, NULL, &posRect);
-    SDL_DestroyTexture(tex);
+    GPURenderText(shader, tex, pos.x, pos.y, w, h, color);
+    glDeleteTextures(1, &tex);
 
-    return posRect;
+    return {pos.x, pos.y, float(w), float(h)};
 }
 
 SDL_FPoint getScreenPos(TTF_Font* font, const std::string& str, int index, SDL_FPoint startPos) {
@@ -439,14 +440,35 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
 
 int main(int argc, char* argv[]){
 
-    SDL_Renderer* renderer;
-    SDL_Window* window;
-
     SDL_Init(SDL_INIT_VIDEO);
-    SDL_CreateWindowAndRenderer("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, 0, &window, &renderer);
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     TTF_Init();
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+    SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
+    SDL_GLContext glctx = SDL_GL_CreateContext(window);
+
+    SDL_GL_MakeCurrent(window, glctx);
+    gladLoadGL();
+    initTextQuad();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Used to render the graph
+    GLuint screenShader = CreateProgram(CompileShader(LoadFile("shaders//screenShader.vert"), GL_VERTEX_SHADER), 
+                                        CompileShader(LoadFile("shaders//screenShader.frag"), GL_FRAGMENT_SHADER));
+
+    // Used to render lines and rectangles
+    GLuint shapeShader = CreateProgram(CompileShader(LoadFile("shaders//shape.vert"), GL_VERTEX_SHADER), 
+                                       CompileShader(LoadFile("shaders//shape.frag"), GL_FRAGMENT_SHADER));
+
+    // Used to render texts
+    GLuint textShader = CreateProgram(CompileShader(LoadFile("shaders//text.vert"), GL_VERTEX_SHADER), 
+                                       CompileShader(LoadFile("shaders//text.frag"), GL_FRAGMENT_SHADER));
 
     bool leftMouseDown = false;
     bool updateExpressions = false;
@@ -463,14 +485,6 @@ int main(int argc, char* argv[]){
     top_left.y = 0 - zoom * (WINDOW_HEIGHT / 2);
 
     SDL_FPoint startPan = {0, 0};
-
-    // Create a streaming texture for direct pixel manipulation
-    SDL_Texture *pixelTex = SDL_CreateTexture(
-        renderer,
-        SDL_PIXELFORMAT_RGBA8888,
-        SDL_TEXTUREACCESS_STREAMING,
-        WINDOW_WIDTH, WINDOW_HEIGHT
-    );
 
     int letterTrack = 0;
 
@@ -518,8 +532,8 @@ int main(int argc, char* argv[]){
     while (run){
         Clock clk = begin();
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
+        glClearColor(0,0,0,1);
+        glClear(GL_COLOR_BUFFER_BIT);
 
         while (SDL_PollEvent(&event)){
             switch (event.type){
@@ -704,26 +718,22 @@ int main(int argc, char* argv[]){
         int startGridY = floor((world_top_left.y) / (gridHeight));
         int endGridY = ceil((world_bottom_right.y) / (gridHeight));
 
-        SDL_SetRenderDrawColor(renderer, 127, 127, 127, 127);
-
         // Render the grids
         for (int i = startGridX; i < endGridX; i++){
             SDL_FPoint p1 = world_to_screen({float(i * gridWidth), world_top_left.y}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({float(i * gridWidth), world_bottom_right.y}, zoom, top_left);
 
-            SDL_RenderLine(renderer, p1.x, p1.y, p2.x, p2.y);
+            GPURenderLine(shapeShader, p1.x, p1.y, p2.x, p2.y, {127, 127, 127, 127});
         }
 
         for (int i = startGridY; i < endGridY; i++){
             SDL_FPoint p1 = world_to_screen({world_top_left.x, float(i * gridHeight)}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({world_bottom_right.x, float(i * gridHeight)}, zoom, top_left);
 
-            SDL_RenderLine(renderer, p1.x, p1.y, p2.x, p2.y);
+            GPURenderLine(shapeShader, p1.x, p1.y, p2.x, p2.y, {127, 127, 127, 127});
         }
 
         // Render the axis
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-
         // Vertical line
         {
         SDL_FPoint p1_world = {0, world_top_left.y};
@@ -732,7 +742,7 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        SDL_RenderLine(renderer, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y);
+        GPURenderLine(shapeShader, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y, {255, 255, 255, 255});
         }
 
         // Horizontal line
@@ -743,202 +753,202 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        SDL_RenderLine(renderer, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y);
+        GPURenderLine(shapeShader, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y, {255, 255, 255, 255});
         }
 
-        void *pixels;
-        int pitch;
-        SDL_LockTexture(pixelTex, NULL, &pixels, &pitch);
+        // void *pixels;
+        // int pitch;
+        // SDL_LockTexture(pixelTex, NULL, &pixels, &pitch);
 
-        SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
-        SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, zoom, top_left);
-        SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, zoom, top_left);
+        // SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
+        // SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, zoom, top_left);
+        // SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, zoom, top_left);
 
-        double xStep = fabs(dirX.x - start.x);
-        double yStep = fabs(dirY.y - start.y);
+        // double xStep = fabs(dirX.x - start.x);
+        // double yStep = fabs(dirY.y - start.y);
 
-        // X and Y are the cordinates in screen cordinates
-        for (int i = 0; i < functions.size(); i++){
-            for (int x = 0; x <= WINDOW_WIDTH; x++){
-                for (int y = 0; y <= WINDOW_HEIGHT; y++){
+        // // X and Y are the cordinates in screen cordinates
+        // for (int i = 0; i < functions.size(); i++){
+        //     for (int x = 0; x <= WINDOW_WIDTH; x++){
+        //         for (int y = 0; y <= WINDOW_HEIGHT; y++){
 
-                    assignValue('x', start.x + x * xStep);
-                    assignValue('y', -(start.y + y * yStep));
+        //             assignValue('x', start.x + x * xStep);
+        //             assignValue('y', -(start.y + y * yStep));
 
-                    gridSigns[i][y][x] = eval(functions[i].expr) <= 0 ? NEGATIVE : POSITIVE;
-                }
-            }
-        }
+        //             gridSigns[i][y][x] = eval(functions[i].expr) <= 0 ? NEGATIVE : POSITIVE;
+        //         }
+        //     }
+        // }
 
-        // Clear the colored pixels arrays
-        for (int i = 0; i < comparisons.size(); i++){
-            for (int x = 0; x <= WINDOW_WIDTH; x++){
-                for (int y = 0; y <= WINDOW_HEIGHT; y++){
-                    coloredPixels[i][y][x] = false;
-                    coloredBoundary[i][y][x] = false;
-                }
-            }
-        }
+        // // Clear the colored pixels arrays
+        // for (int i = 0; i < comparisons.size(); i++){
+        //     for (int x = 0; x <= WINDOW_WIDTH; x++){
+        //         for (int y = 0; y <= WINDOW_HEIGHT; y++){
+        //             coloredPixels[i][y][x] = false;
+        //             coloredBoundary[i][y][x] = false;
+        //         }
+        //     }
+        // }
 
-        int dashLength = 20;
-        // Go through every pixel on the screen and colour them based on the 4 corners
-        for (int i = 0; i < comparisons.size(); i++){
-            double dashLength1 = dashLength; double dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
-            int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
+        // int dashLength = 20;
+        // // Go through every pixel on the screen and colour them based on the 4 corners
+        // for (int i = 0; i < comparisons.size(); i++){
+        //     double dashLength1 = dashLength; double dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
+        //     int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
 
-            SDL_FPoint lastDrawnBoundary = {-1, -1};
+        //     SDL_FPoint lastDrawnBoundary = {-1, -1};
 
-            // Check if a function is strict or not
-            bool isStrict1 = functions[index1].relationSign == LT || functions[index1].relationSign == GT;
-            bool isStrict2 = functions[index2].relationSign == LT || functions[index2].relationSign == GT;
+        //     // Check if a function is strict or not
+        //     bool isStrict1 = functions[index1].relationSign == LT || functions[index1].relationSign == GT;
+        //     bool isStrict2 = functions[index2].relationSign == LT || functions[index2].relationSign == GT;
 
-            const Grid& grid1 = gridSigns[index1];
-            const Grid& grid2 = gridSigns[index2];
-            for (int y = 0; y < WINDOW_HEIGHT; y++){
-                int collisions1 = 0; int collisions2 = 0; bool collisionStart1 = false; bool collisionStart2 = false;
+        //     const Grid& grid1 = gridSigns[index1];
+        //     const Grid& grid2 = gridSigns[index2];
+        //     for (int y = 0; y < WINDOW_HEIGHT; y++){
+        //         int collisions1 = 0; int collisions2 = 0; bool collisionStart1 = false; bool collisionStart2 = false;
 
-                // Loop over the row first to find the number of intersection points with the function
-                for (int x = 0; x < WINDOW_WIDTH; x++){
-                    int a1 = grid1[y][x];
-                    int b1 = grid1[y][x + 1];
-                    int c1 = grid1[y + 1][x];
-                    int d1 = grid1[y + 1][x + 1];
+        //         // Loop over the row first to find the number of intersection points with the function
+        //         for (int x = 0; x < WINDOW_WIDTH; x++){
+        //             int a1 = grid1[y][x];
+        //             int b1 = grid1[y][x + 1];
+        //             int c1 = grid1[y + 1][x];
+        //             int d1 = grid1[y + 1][x + 1];
 
-                    int a2 = grid2[y][x];
-                    int b2 = grid2[y][x + 1];
-                    int c2 = grid2[y + 1][x];
-                    int d2 = grid2[y + 1][x + 1];
+        //             int a2 = grid2[y][x];
+        //             int b2 = grid2[y][x + 1];
+        //             int c2 = grid2[y + 1][x];
+        //             int d2 = grid2[y + 1][x + 1];
 
-                    bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
-                    bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
+        //             bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
+        //             bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
 
-                    // If the current point is on the boundary line, add to the collisions
-                    // also make sure that a continuus line (y = 5) counts as one intersection point
-                    if (!allCornersEqual1){ if (!collisionStart1) collisionStart1 = true; }
-                    else { if (collisionStart1){ collisionStart1 = false; collisions1++; } }
+        //             // If the current point is on the boundary line, add to the collisions
+        //             // also make sure that a continuus line (y = 5) counts as one intersection point
+        //             if (!allCornersEqual1){ if (!collisionStart1) collisionStart1 = true; }
+        //             else { if (collisionStart1){ collisionStart1 = false; collisions1++; } }
 
-                    if (!allCornersEqual2){ if (!collisionStart2) collisionStart2 = true; }
-                    else { if (collisionStart2){ collisionStart2 = false; collisions2++; } }
-                }
+        //             if (!allCornersEqual2){ if (!collisionStart2) collisionStart2 = true; }
+        //             else { if (collisionStart2){ collisionStart2 = false; collisions2++; } }
+        //         }
 
-                // Avoid division by 0
-                if (collisions1 == 0) collisions1 = 1;
-                if (collisions2 == 0) collisions2 = 1;
+        //         // Avoid division by 0
+        //         if (collisions1 == 0) collisions1 = 1;
+        //         if (collisions2 == 0) collisions2 = 1;
 
-                for (int x = 0; x < WINDOW_WIDTH; x++){
-                    int a1 = grid1[y][x];
-                    int b1 = grid1[y][x + 1];
-                    int c1 = grid1[y + 1][x];
-                    int d1 = grid1[y + 1][x + 1];
+        //         for (int x = 0; x < WINDOW_WIDTH; x++){
+        //             int a1 = grid1[y][x];
+        //             int b1 = grid1[y][x + 1];
+        //             int c1 = grid1[y + 1][x];
+        //             int d1 = grid1[y + 1][x + 1];
 
-                    int a2 = grid2[y][x];
-                    int b2 = grid2[y][x + 1];
-                    int c2 = grid2[y + 1][x];
-                    int d2 = grid2[y + 1][x + 1];
+        //             int a2 = grid2[y][x];
+        //             int b2 = grid2[y][x + 1];
+        //             int c2 = grid2[y + 1][x];
+        //             int d2 = grid2[y + 1][x + 1];
 
-                    bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
-                    bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
+        //             bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
+        //             bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
 
-                    // Decide if we should color the current pixel for both functions
-                    bool colorPixel1, colorPixel2;
-                    switch (functions[index1].relationSign){
-                        case EQ: colorPixel1 = !allCornersEqual1; break;
-                        case LT: colorPixel1 = allCornersEqual1 && a1 == NEGATIVE; break;
-                        case LTE: colorPixel1 = !allCornersEqual1 || a1 == NEGATIVE; break;
-                        case GT: colorPixel1 = allCornersEqual1 && a1 == POSITIVE; break;
-                        case GTE: colorPixel1 = !allCornersEqual1 || a1 == POSITIVE; break;
-                    }
+        //             // Decide if we should color the current pixel for both functions
+        //             bool colorPixel1, colorPixel2;
+        //             switch (functions[index1].relationSign){
+        //                 case EQ: colorPixel1 = !allCornersEqual1; break;
+        //                 case LT: colorPixel1 = allCornersEqual1 && a1 == NEGATIVE; break;
+        //                 case LTE: colorPixel1 = !allCornersEqual1 || a1 == NEGATIVE; break;
+        //                 case GT: colorPixel1 = allCornersEqual1 && a1 == POSITIVE; break;
+        //                 case GTE: colorPixel1 = !allCornersEqual1 || a1 == POSITIVE; break;
+        //             }
 
-                    switch (functions[index2].relationSign){
-                        case EQ: colorPixel2 = !allCornersEqual2; break;
-                        case LT: colorPixel2 = allCornersEqual2 && a2 == NEGATIVE; break;
-                        case LTE: colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE; break;
-                        case GT: colorPixel2 = allCornersEqual2 && a2 == POSITIVE; break;
-                        case GTE: colorPixel2 = !allCornersEqual2 || a2 == POSITIVE; break;
-                    }
+        //             switch (functions[index2].relationSign){
+        //                 case EQ: colorPixel2 = !allCornersEqual2; break;
+        //                 case LT: colorPixel2 = allCornersEqual2 && a2 == NEGATIVE; break;
+        //                 case LTE: colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE; break;
+        //                 case GT: colorPixel2 = allCornersEqual2 && a2 == POSITIVE; break;
+        //                 case GTE: colorPixel2 = !allCornersEqual2 || a2 == POSITIVE; break;
+        //             }
 
-                    // Represent strict inequality with a dashed line (<) and the other inequality with a normal line (<=)
-                    // ColorSolids -> same expression as it would be for just a normal straight line (=)
-                    bool colorSolid1 = !allCornersEqual1;
-                    bool colorSolid2 = !allCornersEqual2;
+        //             // Represent strict inequality with a dashed line (<) and the other inequality with a normal line (<=)
+        //             // ColorSolids -> same expression as it would be for just a normal straight line (=)
+        //             bool colorSolid1 = !allCornersEqual1;
+        //             bool colorSolid2 = !allCornersEqual2;
 
-                    // Subtract from the dashLength if we intersected the function
-                    if (colorSolid1 && isStrict1) dashLength1 -= 1.0 / (double)collisions1;
-                    if (colorSolid2 && isStrict2) dashLength2 -= 1.0 / (double)collisions2;
+        //             // Subtract from the dashLength if we intersected the function
+        //             if (colorSolid1 && isStrict1) dashLength1 -= 1.0 / (double)collisions1;
+        //             if (colorSolid2 && isStrict2) dashLength2 -= 1.0 / (double)collisions2;
 
-                    // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
-                    // the line look dashed
-                    if (dashLength1 < 0.0){
-                        drawDash1 = !drawDash1;
-                        dashLength1 = dashLength;
-                    }
-                    if (dashLength2 < 0.0){
-                        drawDash2 = !drawDash2;
-                        dashLength2 = dashLength;
-                    }
+        //             // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
+        //             // the line look dashed
+        //             if (dashLength1 < 0.0){
+        //                 drawDash1 = !drawDash1;
+        //                 dashLength1 = dashLength;
+        //             }
+        //             if (dashLength2 < 0.0){
+        //                 drawDash2 = !drawDash2;
+        //                 dashLength2 = dashLength;
+        //             }
 
-                    // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
-                    // to draw a full line on a non-strict line
-                    bool colorBoundary1 = (colorSolid1 && !isStrict1) || (colorSolid1 && drawDash1 && isStrict1);
-                    bool colorBoundary2 = (colorSolid2 && !isStrict2) || (colorSolid2 && drawDash2 && isStrict2);
-                    bool colorBoundary = colorBoundary1 || colorBoundary2;
+        //             // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
+        //             // to draw a full line on a non-strict line
+        //             bool colorBoundary1 = (colorSolid1 && !isStrict1) || (colorSolid1 && drawDash1 && isStrict1);
+        //             bool colorBoundary2 = (colorSolid2 && !isStrict2) || (colorSolid2 && drawDash2 && isStrict2);
+        //             bool colorBoundary = colorBoundary1 || colorBoundary2;
 
-                    // Shading
-                    SDL_Color c = comparisons[i].clr;
-                    bool setCurPixel = false;
-                    switch (comparisons[i].boolean){
-                        case AND: if ((colorPixel1 && colorPixel2)) setCurPixel = true; break;
-                        case OR: if ((colorPixel1 || colorPixel2)) setCurPixel = true; break;
-                        case DIFF: if ((colorPixel1 && !colorPixel2)) setCurPixel = true; break;
-                        case XOR: if ((colorPixel1 ^ colorPixel2)) setCurPixel = true; break;
-                    }
+        //             // Shading
+        //             SDL_Color c = comparisons[i].clr;
+        //             bool setCurPixel = false;
+        //             switch (comparisons[i].boolean){
+        //                 case AND: if ((colorPixel1 && colorPixel2)) setCurPixel = true; break;
+        //                 case OR: if ((colorPixel1 || colorPixel2)) setCurPixel = true; break;
+        //                 case DIFF: if ((colorPixel1 && !colorPixel2)) setCurPixel = true; break;
+        //                 case XOR: if ((colorPixel1 ^ colorPixel2)) setCurPixel = true; break;
+        //             }
 
-                    if (setCurPixel){
-                        setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 127);
-                        coloredPixels[i][y][x] = true;
-                    }
+        //             if (setCurPixel){
+        //                 setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 127);
+        //                 coloredPixels[i][y][x] = true;
+        //             }
 
-                    // Boundary
-                    if (colorBoundary){
-                        coloredBoundary[i][y][x] = true;
-                    }
-                }
-            }
-        }
+        //             // Boundary
+        //             if (colorBoundary){
+        //                 coloredBoundary[i][y][x] = true;
+        //             }
+        //         }
+        //     }
+        // }
 
-        // Color the boundaries separately
-        for (int i = 0; i < comparisons.size(); i++){
-            for (int x = 0; x < WINDOW_WIDTH; x++){
-                for (int y = 0; y < WINDOW_HEIGHT; y++){
-                    if (coloredBoundary[i][y][x]){
-                        // Check if any of the 4 neighbours are on (if not, dont draw the boundary line)
-                        bool n1 = false, n2 = false, n3 = false, n4 = false;
+        // // Color the boundaries separately
+        // for (int i = 0; i < comparisons.size(); i++){
+        //     for (int x = 0; x < WINDOW_WIDTH; x++){
+        //         for (int y = 0; y < WINDOW_HEIGHT; y++){
+        //             if (coloredBoundary[i][y][x]){
+        //                 // Check if any of the 4 neighbours are on (if not, dont draw the boundary line)
+        //                 bool n1 = false, n2 = false, n3 = false, n4 = false;
 
-                        if (x != 0) n1 = coloredPixels[i][y][x-1];
-                        if (y != 0) n2 = coloredPixels[i][y-1][x];
-                        if (x != WINDOW_WIDTH) n3 = coloredPixels[i][y][x+1];
-                        if (y != WINDOW_HEIGHT) n4 = coloredPixels[i][y+1][x];
+        //                 if (x != 0) n1 = coloredPixels[i][y][x-1];
+        //                 if (y != 0) n2 = coloredPixels[i][y-1][x];
+        //                 if (x != WINDOW_WIDTH) n3 = coloredPixels[i][y][x+1];
+        //                 if (y != WINDOW_HEIGHT) n4 = coloredPixels[i][y+1][x];
 
-                        bool coloredPixelNeighbour = n1 || n2 || n3 || n4;
+        //                 bool coloredPixelNeighbour = n1 || n2 || n3 || n4;
 
-                        // Its not boundary if its surrounded by shaded points (eg. a = x < 5, b = x < 3, a || b -> you shouldn't draw 
-                        // a dashed line at x = 3)
-                        bool isABoundary = !(n1 && n2 && n3 && n4);
+        //                 // Its not boundary if its surrounded by shaded points (eg. a = x < 5, b = x < 3, a || b -> you shouldn't draw 
+        //                 // a dashed line at x = 3)
+        //                 bool isABoundary = !(n1 && n2 && n3 && n4);
 
-                        SDL_Color c = comparisons[i].clr;
-                        if (coloredPixelNeighbour && isABoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
-                    }
-                }
-            }
-        }
+        //                 SDL_Color c = comparisons[i].clr;
+        //                 if (coloredPixelNeighbour && isABoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
+        //             }
+        //         }
+        //     }
+        // }
 
-        SDL_UnlockTexture(pixelTex);
+        // SDL_UnlockTexture(pixelTex);
 
-        // Draw pixel texture
-        SDL_RenderTexture(renderer, pixelTex, NULL, NULL);
+        // // Draw pixel texture
+        // SDL_RenderTexture(renderer, pixelTex, NULL, NULL);
 
-        // Clear the texture to black (RGBA = 0,0,0,255)
-        memset(pixels, 0, pitch * WINDOW_HEIGHT);
+        // // Clear the texture to black (RGBA = 0,0,0,255)
+        // memset(pixels, 0, pitch * WINDOW_HEIGHT);
 
         // Render the numbers on the axis
         {
@@ -966,7 +976,9 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(startNum, 3);
             startNum += gridWidth;
 
-            renderTexts(renderer, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
+            int w, h;
+            GLuint tex = GPUCreateTextTexture(font, number, w, h);
+            GPURenderText(textShader, tex, p1.x, p1.y, w, h, {255, 255, 255, 255});
         }
         }
 
@@ -999,7 +1011,9 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(-startNum, 3);
             startNum += gridHeight;
 
-            renderTexts(renderer, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
+            int w, h;
+            GLuint tex = GPUCreateTextTexture(font, number, w, h);
+            GPURenderText(textShader, tex, p1.x, p1.y, w, h, {255, 255, 255, 255});
         }
         }
 
@@ -1012,8 +1026,7 @@ int main(int argc, char* argv[]){
 
         // Render texts
         std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-        int width = getWidthAndHeight(font, FPSText, {255, 255, 255, 255}).x;
-        renderTexts(renderer, font, FPSText, {(float)WINDOW_WIDTH - width - 10, 10}, {255, 255, 255, 255});
+        renderTexts(textShader, font, FPSText, {WINDOW_WIDTH - w - 10, 10}, {255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -1029,26 +1042,25 @@ int main(int argc, char* argv[]){
             }
 
             // Render the background and text
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 127);
-            SDL_RenderLine(renderer, 2, prevRect.y + 40, 8, prevRect.y + 40);
+            GPURenderLine(shapeShader, 2, prevRect.y + 40, 8, prevRect.y + 40, {255, 255, 255, 127});
+            
+            renderTexts(textShader, font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255});
 
-            prevRect = renderTexts(renderer, font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255, 255});
-
-            SDL_SetRenderDrawColor(renderer, background.r, background.g, background.b, background.a);
-            SDL_RenderFillRect(renderer, &prevRect);
+            // Background rectangle
+            GPURenderRect(shapeShader, prevRect.x, prevRect.y, prevRect.w, prevRect.h, background, true);
 
             if (uiTrack == i){
                 // Render the white surrounding rectangle around the box
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 127);
-                SDL_RenderRect(renderer, &prevRect);
+                GPURenderRect(shapeShader, prevRect.x, prevRect.y, prevRect.w, prevRect.h, {255, 255, 255, 127}, false);
 
                 // Render the vertical line were at
                 float posX = getScreenPos(font, userInput[i], letterTrack, {prevRect.x, prevRect.y}).x;
-                SDL_RenderLine(renderer, posX, prevRect.y, posX, prevRect.y + prevRect.h);
+
+                GPURenderLine(shapeShader, posX, prevRect.y, posX, prevRect.y + prevRect.h, {255, 255, 255, 127});
             }
         }
 
-        SDL_RenderPresent(renderer);
+        SDL_GL_SwapWindow(window);
 
         // Cap the FPS
         if (dt < 1000.0 / fps){
