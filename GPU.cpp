@@ -3,6 +3,8 @@
 #include <vector>
 #include <cstdint>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 #include "GPU.hpp"
 
 #define WINDOW_WIDTH 800
@@ -131,8 +133,11 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount){
 
     // push uniforms: world transform params (startX, startY, stepX, stepY, W, H)
     // You need to set these uniforms / an SSBO for screen params. Example:
-    GLint loc = glGetUniformLocation(shaderEvaluate, "u_screenParams"); // if using uniform block
-    // Set as appropriate. I'll show a simple float4 style below in shader code.
+    GLint loc = glGetUniformLocation(shaderEvaluate, "u_screenParams");
+    GLint loc = glGetUniformLocation(shaderEvaluate, "u_res");
+    GLint loc = glGetUniformLocation(shaderEvaluate, "u_cornerRes");
+    GLint loc = glGetUniformLocation(shaderEvaluate, "u_instrCount");
+    GLint loc = glGetUniformLocation(shaderEvaluate, "u_funcCount");
 
     // Dispatch evaluate for all corner points per-function
     // Workgroup layout chosen in shader e.g. local_size_x=16, local_size_y=16
@@ -155,6 +160,47 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount){
 
     // Make sure the image writes are finished before rendering
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
+}
+
+std::string LoadFile(const std::string& path) {
+    std::ifstream file(path);
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+GLuint CompileShader(const std::string& source, GLenum shaderType) {
+    GLuint shader = glCreateShader(shaderType);
+    const char* src = source.c_str();
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+
+    // Error checking
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "Shader compile error:\n" << infoLog << std::endl;
+    }
+    return shader;
+}
+
+GLuint CreateProgram(GLuint vert, GLuint frag) {
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vert);
+    glAttachShader(program, frag);
+    glLinkProgram(program);
+
+    // Error checking
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "Program link error:\n" << infoLog << std::endl;
+    }
+    return program;
 }
 
 // Later: render outputTex as usual (simple textured quad)

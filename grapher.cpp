@@ -130,6 +130,12 @@ SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::st
     return texture;
 }
 
+SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+
+    return {(float)surface->w, (float)surface->h};
+}
+
 // Return the bounding rectangle so we can position other texts accordingly
 SDL_FRect renderTexts(SDL_Renderer* renderer, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){
     // Rectangle that has its top left corner at pos.x, pos.y
@@ -446,6 +452,7 @@ int main(int argc, char* argv[]){
     bool updateExpressions = false;
 
     double zoom = 1.0 / 20.0;
+    double fps = 120;
 
     bool run = true;
     SDL_Event event;
@@ -467,7 +474,9 @@ int main(int argc, char* argv[]){
 
     int letterTrack = 0;
 
-    std::vector<std::string> userInput = {"func a = y < -x^3-2*x^2+2*x+1", "comp a || a"};
+    // Normal distribution
+    std::vector<std::string> userInput = {"func a = y <= (1/sqrt(pi*2*o^2)) * (e^(-((x-u)^2/(2*o^2))))", "var o = 0.5", "var u = 0", 
+                                          "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;
@@ -912,8 +921,12 @@ int main(int argc, char* argv[]){
 
                         bool coloredPixelNeighbour = n1 || n2 || n3 || n4;
 
+                        // Its not boundary if its surrounded by shaded points (eg. a = x < 5, b = x < 3, a || b -> you shouldn't draw 
+                        // a dashed line at x = 3)
+                        bool isABoundary = !(n1 && n2 && n3 && n4);
+
                         SDL_Color c = comparisons[i].clr;
-                        if (coloredPixelNeighbour) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
+                        if (coloredPixelNeighbour && isABoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
                     }
                 }
             }
@@ -990,12 +1003,17 @@ int main(int argc, char* argv[]){
         }
         }
 
-        // Render texts
-        // std::string zoomText = "Zoom: " + std::to_string(zoom);
-        // SDL_FRect prevText = renderTexts(renderer, font, zoomText, {10, 10}, {255, 255, 255, 255});
+        double dt = end(clk);
 
-        // std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-        // prevText = renderTexts(renderer, font, FPSText, {prevText.x, prevText.y + 30}, {255, 255, 255, 255});
+        // We cap the FPS, so make the counter match the actual FPS
+        if (dt < 1000.0 / fps) dt = 1000.0 / fps;
+
+        double FPS = calculateFPS(dt);
+
+        // Render texts
+        std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
+        int width = getWidthAndHeight(font, FPSText, {255, 255, 255, 255}).x;
+        renderTexts(renderer, font, FPSText, {(float)WINDOW_WIDTH - width - 10, 10}, {255, 255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -1030,9 +1048,12 @@ int main(int argc, char* argv[]){
             }
         }
 
-        double FPS = calculateFPS(end(clk));
-
         SDL_RenderPresent(renderer);
+
+        // Cap the FPS
+        if (dt < 1000.0 / fps){
+            SDL_Delay(1000.0 / fps - dt);
+        }
     }
 
     SDL_StopTextInput(window);
