@@ -36,7 +36,14 @@ as an expression, using the expression.hpp library I made. It does this for ever
 array functions. The renderer goes through every function, and then for each pixel it applies that function, and checks if the result 
 is either negative or positive (0 counts as negative). This is used to ensure the line is drawn visually well instead of just being a 
 bunch of points. It then goes through all the elements in the comparisons array, and compares two functions at a time individually per 
-pixel. It draws the resulting pixels to a texture, which is then rendered on the screen.
+pixel. It handles boundaries separately from shading, by only colouring the boundary points if theyre next to a shaded part of the 
+two compared functions. The boundaries can be either dashed or solid, solid is easy to draw, just draw every pixel where the four 
+corners are not the same sign. For the dashed line, you still draw it the same way, but you periodically dont draw the line 
+where you should draw it. Actually, the program goes through plots the function from left-right and top-down, and when it sees a boundary 
+point, it decrements a variable "dashLength1" by 1 (that starts at the desired dash lenghts), but if there are multiple intersections with 
+the function in the same row, it only decrements the variable by 1 / numHorizontalIntersections (essentially treating the function at each 
+collision point as a separate dash, which works most of the time). Once it goes below zero, the program will switch the drawing mode, 
+and also reset the dashLength variable. By the way, dashed lines mean strict inequality (<, >), while solid lines are the opposite (>=, <=)
 
 Miscellanous facts:
 The rest of the things inside this project I won't explain, such as the way the axis are rendered or how I implemented the moving 
@@ -44,11 +51,6 @@ around and zooming, because I've just copied that from the old graphing project,
 when you're reading this you still understand it. If not, go watch a video on it or something.
 
 Besides the way the numbers are plotted on the axis is a mystery to me, I just copied it from the old project.
-
-The dashed lines are rendered like this: for the first 50 (or whatever number) of points that are on the boundary, the program draws 
-a pixel, and then for the next 50 it doesn't draw a pixel, then it draws pixels again and so on. You might think that the dashed 
-lines look weird and move around in ways that they shouldn't do, but if you look at desmos, it looks the same (besides the random gaps 
-in some of the dashed lines).
 */
 
 
@@ -126,6 +128,12 @@ SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::st
     SDL_DestroySurface(surface);
 
     return texture;
+}
+
+SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+
+    return {(float)surface->w, (float)surface->h};
 }
 
 // Return the bounding rectangle so we can position other texts accordingly
@@ -444,6 +452,7 @@ int main(int argc, char* argv[]){
     bool updateExpressions = false;
 
     double zoom = 1.0 / 20.0;
+    double fps = 120;
 
     bool run = true;
     SDL_Event event;
@@ -465,7 +474,9 @@ int main(int argc, char* argv[]){
 
     int letterTrack = 0;
 
-    std::vector<std::string> userInput = {"func a = y < -x^3-2*x^2+2*x+1", "comp a || a"};
+    // Normal distribution
+    std::vector<std::string> userInput = {"func a = y <= (1/sqrt(pi*2*o^2)) * (e^(-((x-u)^2/(2*o^2))))", "var o = 0.5", "var u = 0", 
+                                          "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;
@@ -474,13 +485,24 @@ int main(int argc, char* argv[]){
     updateExprs(functions, comparisons, userInput);
 
     #define Grid std::vector<std::vector<States>>
+
+    // An arbitrary upper limit for the number of functions you can input
+    int numFunctions = 100;
+
     // Create a grid to record the sign of values
     std::vector<Grid> gridSigns;
+    std::vector<std::vector<std::vector<bool>>> coloredPixels;
+    std::vector<std::vector<std::vector<bool>>> coloredBoundary;
 
     // Initalize the grids
-    for (int i = 0; i < 100; i++){
+    for (int i = 0; i < numFunctions; i++){
         std::vector<std::vector<States>> grid(WINDOW_HEIGHT + 1, std::vector<States>(WINDOW_WIDTH + 1));
+        std::vector<std::vector<bool>> pixels(WINDOW_HEIGHT + 1, std::vector<bool>(WINDOW_WIDTH + 1));
+        std::vector<std::vector<bool>> boundary(WINDOW_HEIGHT + 1, std::vector<bool>(WINDOW_WIDTH + 1));
+
         gridSigns.push_back(grid);
+        coloredPixels.push_back(pixels);
+        coloredBoundary.push_back(boundary);
     }
 
     double curWorldWidth = WINDOW_WIDTH;
@@ -748,11 +770,23 @@ int main(int argc, char* argv[]){
             }
         }
 
+        // Clear the colored pixels arrays
+        for (int i = 0; i < comparisons.size(); i++){
+            for (int x = 0; x <= WINDOW_WIDTH; x++){
+                for (int y = 0; y <= WINDOW_HEIGHT; y++){
+                    coloredPixels[i][y][x] = false;
+                    coloredBoundary[i][y][x] = false;
+                }
+            }
+        }
+
         int dashLength = 20;
         // Go through every pixel on the screen and colour them based on the 4 corners
         for (int i = 0; i < comparisons.size(); i++){
-            int dashLength1 = dashLength; int dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
+            double dashLength1 = dashLength; double dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
             int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
+
+            SDL_FPoint lastDrawnBoundary = {-1, -1};
 
             // Check if a function is strict or not
             bool isStrict1 = functions[index1].relationSign == LT || functions[index1].relationSign == GT;
@@ -760,8 +794,38 @@ int main(int argc, char* argv[]){
 
             const Grid& grid1 = gridSigns[index1];
             const Grid& grid2 = gridSigns[index2];
-            for (int y = 0; y < WINDOW_WIDTH; y++){
-                for (int x = 0; x < WINDOW_HEIGHT; x++){
+            for (int y = 0; y < WINDOW_HEIGHT; y++){
+                int collisions1 = 0; int collisions2 = 0; bool collisionStart1 = false; bool collisionStart2 = false;
+
+                // Loop over the row first to find the number of intersection points with the function
+                for (int x = 0; x < WINDOW_WIDTH; x++){
+                    int a1 = grid1[y][x];
+                    int b1 = grid1[y][x + 1];
+                    int c1 = grid1[y + 1][x];
+                    int d1 = grid1[y + 1][x + 1];
+
+                    int a2 = grid2[y][x];
+                    int b2 = grid2[y][x + 1];
+                    int c2 = grid2[y + 1][x];
+                    int d2 = grid2[y + 1][x + 1];
+
+                    bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
+                    bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
+
+                    // If the current point is on the boundary line, add to the collisions
+                    // also make sure that a continuus line (y = 5) counts as one intersection point
+                    if (!allCornersEqual1){ if (!collisionStart1) collisionStart1 = true; }
+                    else { if (collisionStart1){ collisionStart1 = false; collisions1++; } }
+
+                    if (!allCornersEqual2){ if (!collisionStart2) collisionStart2 = true; }
+                    else { if (collisionStart2){ collisionStart2 = false; collisions2++; } }
+                }
+
+                // Avoid division by 0
+                if (collisions1 == 0) collisions1 = 1;
+                if (collisions2 == 0) collisions2 = 1;
+
+                for (int x = 0; x < WINDOW_WIDTH; x++){
                     int a1 = grid1[y][x];
                     int b1 = grid1[y][x + 1];
                     int c1 = grid1[y + 1][x];
@@ -785,7 +849,7 @@ int main(int argc, char* argv[]){
                         case GTE: colorPixel1 = !allCornersEqual1 || a1 == POSITIVE; break;
                     }
 
-                    switch (functions[index1].relationSign){
+                    switch (functions[index2].relationSign){
                         case EQ: colorPixel2 = !allCornersEqual2; break;
                         case LT: colorPixel2 = allCornersEqual2 && a2 == NEGATIVE; break;
                         case LTE: colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE; break;
@@ -798,16 +862,19 @@ int main(int argc, char* argv[]){
                     bool colorSolid1 = !allCornersEqual1;
                     bool colorSolid2 = !allCornersEqual2;
 
-                    // If the current point is on the boundary line, subtract from dashLength once 
-                    if (colorSolid1 && isStrict1){ dashLength1--; }
-                    if (colorSolid2 && isStrict2){ dashLength2--; }
+                    // Subtract from the dashLength if we intersected the function
+                    if (colorSolid1 && isStrict1) dashLength1 -= 1.0 / (double)collisions1;
+                    if (colorSolid2 && isStrict2) dashLength2 -= 1.0 / (double)collisions2;
+
                     // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
                     // the line look dashed
-                    if (dashLength1 < 0){
-                        drawDash1 = !drawDash1; dashLength1 = dashLength;
+                    if (dashLength1 < 0.0){
+                        drawDash1 = !drawDash1;
+                        dashLength1 = dashLength;
                     }
-                    if (dashLength2 < 0){
-                        drawDash2 = !drawDash2; dashLength2 = dashLength;
+                    if (dashLength2 < 0.0){
+                        drawDash2 = !drawDash2;
+                        dashLength2 = dashLength;
                     }
 
                     // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
@@ -816,14 +883,50 @@ int main(int argc, char* argv[]){
                     bool colorBoundary2 = (colorSolid2 && !isStrict2) || (colorSolid2 && drawDash2 && isStrict2);
                     bool colorBoundary = colorBoundary1 || colorBoundary2;
 
-                    int a = colorBoundary ? 255 : 127;
-
+                    // Shading
                     SDL_Color c = comparisons[i].clr;
+                    bool setCurPixel = false;
                     switch (comparisons[i].boolean){
-                        case AND: if ((colorPixel1 && colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
-                        case OR: if ((colorPixel1 || colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
-                        case DIFF: if ((colorPixel1 && !colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
-                        case XOR: if ((colorPixel1 ^ colorPixel2) || colorBoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, a); break;
+                        case AND: if ((colorPixel1 && colorPixel2)) setCurPixel = true; break;
+                        case OR: if ((colorPixel1 || colorPixel2)) setCurPixel = true; break;
+                        case DIFF: if ((colorPixel1 && !colorPixel2)) setCurPixel = true; break;
+                        case XOR: if ((colorPixel1 ^ colorPixel2)) setCurPixel = true; break;
+                    }
+
+                    if (setCurPixel){
+                        setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 127);
+                        coloredPixels[i][y][x] = true;
+                    }
+
+                    // Boundary
+                    if (colorBoundary){
+                        coloredBoundary[i][y][x] = true;
+                    }
+                }
+            }
+        }
+
+        // Color the boundaries separately
+        for (int i = 0; i < comparisons.size(); i++){
+            for (int x = 0; x < WINDOW_WIDTH; x++){
+                for (int y = 0; y < WINDOW_HEIGHT; y++){
+                    if (coloredBoundary[i][y][x]){
+                        // Check if any of the 4 neighbours are on (if not, dont draw the boundary line)
+                        bool n1 = false, n2 = false, n3 = false, n4 = false;
+
+                        if (x != 0) n1 = coloredPixels[i][y][x-1];
+                        if (y != 0) n2 = coloredPixels[i][y-1][x];
+                        if (x != WINDOW_WIDTH) n3 = coloredPixels[i][y][x+1];
+                        if (y != WINDOW_HEIGHT) n4 = coloredPixels[i][y+1][x];
+
+                        bool coloredPixelNeighbour = n1 || n2 || n3 || n4;
+
+                        // Its not boundary if its surrounded by shaded points (eg. a = x < 5, b = x < 3, a || b -> you shouldn't draw 
+                        // a dashed line at x = 3)
+                        bool isABoundary = !(n1 && n2 && n3 && n4);
+
+                        SDL_Color c = comparisons[i].clr;
+                        if (coloredPixelNeighbour && isABoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
                     }
                 }
             }
@@ -900,12 +1003,17 @@ int main(int argc, char* argv[]){
         }
         }
 
-        // Render texts
-        // std::string zoomText = "Zoom: " + std::to_string(zoom);
-        // SDL_FRect prevText = renderTexts(renderer, font, zoomText, {10, 10}, {255, 255, 255, 255});
+        double dt = end(clk);
 
-        // std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-        // prevText = renderTexts(renderer, font, FPSText, {prevText.x, prevText.y + 30}, {255, 255, 255, 255});
+        // We cap the FPS, so make the counter match the actual FPS
+        if (dt < 1000.0 / fps) dt = 1000.0 / fps;
+
+        double FPS = calculateFPS(dt);
+
+        // Render texts
+        std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
+        int width = getWidthAndHeight(font, FPSText, {255, 255, 255, 255}).x;
+        renderTexts(renderer, font, FPSText, {(float)WINDOW_WIDTH - width - 10, 10}, {255, 255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -940,9 +1048,12 @@ int main(int argc, char* argv[]){
             }
         }
 
-        double FPS = calculateFPS(end(clk));
-
         SDL_RenderPresent(renderer);
+
+        // Cap the FPS
+        if (dt < 1000.0 / fps){
+            SDL_Delay(1000.0 / fps - dt);
+        }
     }
 
     SDL_StopTextInput(window);
