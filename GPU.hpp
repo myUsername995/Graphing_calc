@@ -43,8 +43,8 @@ GLuint CreateProgram(GLuint vert, GLuint frag);
 ScreenQuad createScreenQuadAndTexture();
 void drawTexture(GLuint shader, GLuint texture, GLuint vao);
 
-void GPURenderLine(GLuint shader, float x1, float y1, float x2, float y2, SDL_Color color);
-void GPURenderRect(GLuint shader, float x, float y, float w, float h, SDL_Color color, bool filled);
 void initTextQuad();
-GLuint GPUCreateTextTexture(TTF_Font* font, const std::string& text, int& w, int& h);
-void GPURenderText(GLuint shader, GLuint tex, float x, float y, int w, int h, SDL_Color color);
+void initShapeRenderer();
+void GPURenderLine(GLuint shader, SDL_FPoint p1, SDL_FPoint p2, SDL_Color color);
+void GPURenderRect(GLuint shader, SDL_FRect pos, SDL_Color color, bool filled);
+void GPURenderText(GLuint shader, GLuint tex, SDL_FRect pos, SDL_Color color);

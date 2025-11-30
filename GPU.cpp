@@ -256,81 +256,25 @@ void drawTexture(GLuint shader, GLuint texture, GLuint vao) {
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void GPURenderLine(GLuint shader, float x1, float y1, float x2, float y2, SDL_Color color){
-    // convert screen coords (0..W/H) to NDC (-1..1)
-    float ndcVerts[4] = {
-        2.0f*x1/W - 1.0f, 1.0f - 2.0f*y1/H,
-        2.0f*x2/W - 1.0f, 1.0f - 2.0f*y2/H
-    };
+// --- Global GPU shape renderer state ---
+GLuint gShapeVAO = 0;
+GLuint gShapeVBO = 0;
 
-    GLuint vao, vbo;
-    glGenVertexArrays(1,&vao);
-    glGenBuffers(1,&vbo);
+void initShapeRenderer(){
+    glGenVertexArrays(1, &gShapeVAO);
+    glGenBuffers(1, &gShapeVBO);
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER,vbo);
-    glBufferData(GL_ARRAY_BUFFER,sizeof(ndcVerts),ndcVerts,GL_DYNAMIC_DRAW);
+    glBindVertexArray(gShapeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, gShapeVBO);
 
-    glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,2*sizeof(float),0);
+    // Allocate enough space for ALL shapes (lines + rectangles)
+    glBufferData(GL_ARRAY_BUFFER, 1024 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
     glEnableVertexAttribArray(0);
 
-    glUseProgram(shader);
-
-    glUniform4f(glGetUniformLocation(shader,"u_color"),
-                color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
-
-    glDrawArrays(GL_LINES,0,2);
-
-    glDeleteBuffers(1,&vbo);
-    glDeleteVertexArrays(1,&vao);
-}
-
-void GPURenderRect(GLuint shader, float x, float y, float w, float h, SDL_Color color, bool filled){
-    float verts[12]; // 2 triangles for filled
-    if (filled) {
-        verts[0]  = 2.0f*x/W - 1.0f;      verts[1]  = 1.0f - 2.0f*y/H;
-        verts[2]  = 2.0f*(x+w)/W - 1.0f;  verts[3]  = 1.0f - 2.0f*y/H;
-        verts[4]  = 2.0f*(x+w)/W - 1.0f;  verts[5]  = 1.0f - 2.0f*(y+h)/H;
-
-        verts[6]  = 2.0f*x/W - 1.0f;      verts[7]  = 1.0f - 2.0f*y/H;
-        verts[8]  = 2.0f*(x+w)/W - 1.0f;  verts[9]  = 1.0f - 2.0f*(y+h)/H;
-        verts[10] = 2.0f*x/W - 1.0f;      verts[11] = 1.0f - 2.0f*(y+h)/H;
-    } else {
-        float tmp[8] = {
-            x,     y,
-            x+w,   y,
-            x+w,   y+h,
-            x,     y+h
-        };
-        for(int i=0;i<4;i++){
-            verts[i*2]   = 2.0f*tmp[i*2]/W - 1.0f;
-            verts[i*2+1] = 1.0f - 2.0f*tmp[i*2+1]/H;
-        }
-    }
-
-    GLuint vao, vbo;
-    glGenVertexArrays(1,&vao);
-    glGenBuffers(1,&vbo);
-
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER,vbo);
-    glBufferData(GL_ARRAY_BUFFER, filled?sizeof(verts):8*sizeof(float), verts, GL_DYNAMIC_DRAW);
-
-    glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,2*sizeof(float),0);
-    glEnableVertexAttribArray(0);
-
-    glUseProgram(shader);
-
-    glUniform4f(glGetUniformLocation(shader,"u_color"),
-                color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
-
-    if (filled)
-        glDrawArrays(GL_TRIANGLES,0,6);
-    else
-        glDrawArrays(GL_LINE_LOOP,0,4);
-
-    glDeleteBuffers(1,&vbo);
-    glDeleteVertexArrays(1,&vao);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 }
 
 GLuint textVAO, textVBO;
@@ -352,36 +296,76 @@ void initTextQuad() {
     glBindVertexArray(0);
 }
 
-GLuint GPUCreateTextTexture(TTF_Font* font, const std::string& text, int& w, int& h){
-    SDL_Surface* surf = TTF_RenderText_Blended(font, text.c_str(), text.length(), {127,127,255,255});
-    if (!surf) return 0;
+inline float sx(float x) { return 2.0f * x / W - 1.0f; }
+inline float sy(float y) { return 1.0f - 2.0f * y / H; }
 
-    w = surf->w;
-    h = surf->h;
+void GPURenderLine(GLuint shapeShader, SDL_FPoint p1, SDL_FPoint p2, SDL_Color color){
+    float x1 = p1.x; float y1 = p1.y; float x2 = p2.x; float y2 = p2.y;
 
-    // Convert to RGBA8888
-    SDL_Surface* rgbaSurf = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_RGBA8888);
-    SDL_DestroySurface(surf);  // free the original
+    float verts[] = {
+        sx(x1), sy(y1),
+        sx(x2), sy(y2)
+    };
 
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    glUseProgram(shapeShader);
 
-    // USE rgbaSurf HERE
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgbaSurf->w, rgbaSurf->h, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurf->pixels);
+    glUniform4f(glGetUniformLocation(shapeShader, "u_color"),
+                color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindVertexArray(gShapeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, gShapeVBO);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
-    SDL_DestroySurface(rgbaSurf);
-    return tex;
+    glDrawArrays(GL_LINES, 0, 2);
+
+    glBindVertexArray(0);
 }
 
-void GPURenderText(GLuint shader, GLuint tex, float x, float y, int w, int h, SDL_Color color){
+void GPURenderRect(GLuint shapeShader, SDL_FRect pos, SDL_Color color, bool filled){
+    float x = pos.x; float y = pos.y; float w = pos.w; float h = pos.h;
+
+    glUseProgram(shapeShader);
+
+    glUniform4f(glGetUniformLocation(shapeShader, "u_color"),
+                color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
+
+    glBindVertexArray(gShapeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, gShapeVBO);
+
+    if (filled){
+        float verts[] = {
+            sx(x),     sy(y),
+            sx(x+w),   sy(y),
+            sx(x+w),   sy(y+h),
+
+            sx(x),     sy(y),
+            sx(x+w),   sy(y+h),
+            sx(x),     sy(y+h)
+        };
+
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+    else
+    {
+        float verts[] = {
+            sx(x),     sy(y),
+            sx(x+w),   sy(y),
+            sx(x+w),   sy(y+h),
+            sx(x),     sy(y+h)
+        };
+
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+        glDrawArrays(GL_LINE_LOOP, 0, 4);
+    }
+
+    glBindVertexArray(0);
+}
+
+void GPURenderText(GLuint shader, GLuint tex, SDL_FRect pos, SDL_Color color){
+    float x = pos.x; float y = pos.y; float w = pos.w; float h = pos.h;
+
     // Build vertices in NDC
     float verts[] = {
         2.0f * x / float(W) - 1.0f, 1.0f - 2.0f * y / float(H), 0.0f, 0.0f,

@@ -131,8 +131,8 @@ SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::st
     return texture;
 }
 
-SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str, SDL_Color color){
-    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
+SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str){
+    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), {0, 0, 0, 0});
 
     return {(float)surface->w, (float)surface->h};
 }
@@ -163,8 +163,8 @@ SDL_FRect renderTexts(GLuint shader, TTF_Font* font, const std::string& str, SDL
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     SDL_DestroySurface(rgbaSurf); 
-    
-    GPURenderText(shader, tex, pos.x, pos.y, w, h, color); 
+
+    GPURenderText(shader, tex, {pos.x, pos.y, float(w), float(h)}, color); 
     glDeleteTextures(1, &tex);
 
     return {pos.x, pos.y, float(w), float(h)}; 
@@ -473,6 +473,7 @@ int main(int argc, char* argv[]){
     SDL_GL_MakeCurrent(window, glctx);
     gladLoadGL();
     initTextQuad();
+    initShapeRenderer();
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -493,7 +494,7 @@ int main(int argc, char* argv[]){
     bool updateExpressions = false;
 
     double zoom = 1.0 / 20.0;
-    double fps = 120;
+    double fps = 1000;
 
     bool run = true;
     SDL_Event event;
@@ -742,14 +743,14 @@ int main(int argc, char* argv[]){
             SDL_FPoint p1 = world_to_screen({float(i * gridWidth), world_top_left.y}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({float(i * gridWidth), world_bottom_right.y}, zoom, top_left);
 
-            GPURenderLine(shapeShader, p1.x, p1.y, p2.x, p2.y, {127, 127, 127, 127});
+            GPURenderLine(shapeShader, p1, p2, {127, 127, 127, 127});
         }
 
         for (int i = startGridY; i < endGridY; i++){
             SDL_FPoint p1 = world_to_screen({world_top_left.x, float(i * gridHeight)}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({world_bottom_right.x, float(i * gridHeight)}, zoom, top_left);
 
-            GPURenderLine(shapeShader, p1.x, p1.y, p2.x, p2.y, {127, 127, 127, 127});
+            GPURenderLine(shapeShader, p1, p2, {127, 127, 127, 127});
         }
 
         // Render the axis
@@ -761,7 +762,7 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        GPURenderLine(shapeShader, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y, {255, 255, 255, 255});
+        GPURenderLine(shapeShader, p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
         // Horizontal line
@@ -772,7 +773,7 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        GPURenderLine(shapeShader, p1_screen.x, p1_screen.y, p2_screen.x, p2_screen.y, {255, 255, 255, 255});
+        GPURenderLine(shapeShader, p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
         // void *pixels;
@@ -995,9 +996,7 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(startNum, 3);
             startNum += gridWidth;
 
-            int w, h;
-            GLuint tex = GPUCreateTextTexture(font, number, w, h);
-            GPURenderText(textShader, tex, p1.x, p1.y, w, h, {255, 255, 255, 255});
+            renderTexts(textShader, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
 
@@ -1030,9 +1029,7 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(-startNum, 3);
             startNum += gridHeight;
 
-            int w, h;
-            GLuint tex = GPUCreateTextTexture(font, number, w, h);
-            GPURenderText(textShader, tex, p1.x, p1.y, w, h, {255, 255, 255, 255});
+            renderTexts(textShader, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
 
@@ -1045,10 +1042,8 @@ int main(int argc, char* argv[]){
 
         // Render texts
         std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-
-        int w, h;
-        GLuint tex = GPUCreateTextTexture(font, FPSText, w, h);
-        GPURenderText(textShader, tex, WINDOW_WIDTH - w - 10, 10, w, h, {255, 255, 255, 255});
+        int width = getWidthAndHeight(font, FPSText).x;
+        renderTexts(textShader, font, FPSText, {(float)WINDOW_WIDTH - width- 10, 10}, {255, 255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -1064,31 +1059,20 @@ int main(int argc, char* argv[]){
             }
 
             // Render the background and text
-            GPURenderLine(shapeShader, 2, prevRect.y + 40, 8, prevRect.y + 40, {255, 255, 255, 127});
+            GPURenderLine(shapeShader, {2, prevRect.y + 40}, {8, prevRect.y + 40}, {255, 255, 255, 127});
 
-            int w, h;
-            GLuint tex = GPUCreateTextTexture(font, userInput[i], w, h);
-            GPURenderText(textShader, tex, prevRect.x, prevRect.y + 30, w, h, {255, 255, 255, 255});
+            prevRect = renderTexts(textShader, font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255, 255});
 
             // Background rectangle
-            GPURenderRect(shapeShader, prevRect.x, prevRect.y, prevRect.w, prevRect.h, background, true);
-
+            GPURenderRect(shapeShader, prevRect, background, true);
             if (uiTrack == i){
                 // Render the white surrounding rectangle around the box
-                GPURenderRect(shapeShader, prevRect.x, prevRect.y, prevRect.w, prevRect.h, {255, 255, 255, 127}, false);
+                GPURenderRect(shapeShader, prevRect, {255, 255, 255, 127}, false);
 
                 // Render the vertical line were at
                 float posX = getScreenPos(font, userInput[i], letterTrack, {prevRect.x, prevRect.y}).x;
-
-                GPURenderLine(shapeShader, posX, prevRect.y, posX, prevRect.y + prevRect.h, {255, 255, 255, 127});
+                GPURenderLine(shapeShader, {posX, prevRect.y}, {posX, prevRect.y + prevRect.h}, {255, 255, 255, 127});
             }
-        }
-
-        glClearColor(0,0,0,1);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        {
-            renderTexts(textShader, font, "hii", {100, 100}, {255, 255, 255, 255});
         }
 
         SDL_GL_SwapWindow(window);
