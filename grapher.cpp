@@ -64,9 +64,10 @@ Besides the way the numbers are plotted on the axis is a mystery to me, I just c
 #include <iomanip>
 #include <stdint.h>
 #include <cmath>
-#include "expression.hpp"
-#include "time.hpp"
-#include "GPU.hpp"
+#include "expression.hpp"               // Expression parsing for functions
+#include "time.hpp"                     // Timings for benchmarking and FPS
+#include "GPU.hpp"                      // General drawing functions compatible with openGL
+#include "rendering.hpp"                // Specific rendering of functions
 
 #define WINDOW_HEIGHT 800
 #define WINDOW_WIDTH 800
@@ -84,7 +85,7 @@ std::array<SDL_Color, 9> colors = {
 };
 
 enum States {NEGATIVE, POSITIVE};
-enum Booleans : uint32_t {OR, AND, XOR, DIFF};
+enum Booleans : uint32_t {AND, OR, DIFF, XOR};
 enum Comparators : uint32_t {EQ, LT, LTE, GT, GTE};
 
 struct Function {
@@ -118,56 +119,10 @@ std::string to_string_with_precision(double value, int precision) {
     return out.str();
 }
 
-SDL_Texture* renderTexture(SDL_Renderer* renderer, TTF_Font* font, const std::string& str, SDL_FRect& pos, SDL_Color color){
-    SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), color);
-
-    pos.w = surface->w;
-    pos.h = surface->h;
-
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-
-    SDL_DestroySurface(surface);
-
-    return texture;
-}
-
 SDL_FPoint getWidthAndHeight(TTF_Font* font, const std::string& str){
     SDL_Surface* surface = TTF_RenderText_Solid(font, str.c_str(), str.length(), {0, 0, 0, 0});
 
     return {(float)surface->w, (float)surface->h};
-}
-
-// Return the bounding rectangle so we can position other texts accordingly
-SDL_FRect renderTexts(GLuint shader, TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color){ 
-    SDL_Surface* surface = TTF_RenderText_Blended(font, str.c_str(), str.length(), color); 
-    if (!surface) return {pos.x, pos.y, 0, 0}; 
-    SDL_Surface* rgbaSurf = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA8888); 
-    SDL_DestroySurface(surface); 
-
-    int w = rgbaSurf->w; 
-    int h = rgbaSurf->h; 
-
-    GLuint tex; 
-    glGenTextures(1, &tex); 
-    glBindTexture(GL_TEXTURE_2D, tex); 
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurf->pixels); 
-
-    // Set swizzle so the shader sees Alpha in RED
-    GLint swizzleMask[] = { GL_ZERO, GL_ZERO, GL_ZERO, GL_RED };
-    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    SDL_DestroySurface(rgbaSurf); 
-
-    GPURenderText(shader, tex, {pos.x, pos.y, float(w), float(h)}, color); 
-    glDeleteTextures(1, &tex);
-
-    return {pos.x, pos.y, float(w), float(h)}; 
 }
 
 SDL_FPoint getScreenPos(TTF_Font* font, const std::string& str, int index, SDL_FPoint startPos) {
@@ -227,8 +182,8 @@ bool onlySpaces(const std::string& str) {
     return true;
 }
 
-bool checkInput(std::string str, std::string subStr, int startIndex){
-    return str.find(subStr, startIndex) != std::string::npos;
+bool checkInput(std::string str, std::string subStr, int startIndex) {
+    return str.find(subStr, startIndex) == startIndex;
 }
 
 bool stringToDouble(const std::string& str, double& outValue) {
@@ -468,16 +423,10 @@ int main(int argc, char* argv[]){
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
     SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
-    SDL_GLContext glctx = SDL_GL_CreateContext(window);
 
-    SDL_GL_MakeCurrent(window, glctx);
-    gladLoadGL();
-    initTextQuad();
-    initShapeRenderer();
+    initalizeGPU(window);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+    // Used to evaluate the function
     GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders//evaluate.comp.glsl"), GL_COMPUTE_SHADER));
     GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders//combine.comp.glsl"), GL_COMPUTE_SHADER));
 
@@ -485,16 +434,8 @@ int main(int argc, char* argv[]){
     GLuint screenShader = CreateProgram(CompileShader(LoadFile("shaders//screenShader.vert"), GL_VERTEX_SHADER), 
                                         CompileShader(LoadFile("shaders//screenShader.frag"), GL_FRAGMENT_SHADER));
 
-    // Used to render lines and rectangles
-    GLuint shapeShader = CreateProgram(CompileShader(LoadFile("shaders//shape.vert"), GL_VERTEX_SHADER), 
-                                       CompileShader(LoadFile("shaders//shape.frag"), GL_FRAGMENT_SHADER));
-
-    // Used to render texts
-    GLuint textShader = CreateProgram(CompileShader(LoadFile("shaders//text.vert"), GL_VERTEX_SHADER), 
-                                       CompileShader(LoadFile("shaders//text.frag"), GL_FRAGMENT_SHADER));
-
     bool leftMouseDown = false;
-    bool updateExpressions = false;
+    bool updateExpressions = true;
 
     double zoom = 1.0 / 20.0;
     double fps = 1000;
@@ -512,14 +453,11 @@ int main(int argc, char* argv[]){
     int letterTrack = 0;
 
     // Normal distribution
-    std::vector<std::string> userInput = {"func a = y <= (1/sqrt(pi*2*o^2)) * (e^(-((x-u)^2/(2*o^2))))", "var o = 0.5", "var u = 0", 
-                                          "comp a || a"};
+    std::vector<std::string> userInput = {"func a = y < -x", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;
     std::vector<Function> functions;
-
-    updateExprs(functions, comparisons, userInput);
 
     #define Grid std::vector<std::vector<States>>
 
@@ -549,6 +487,9 @@ int main(int argc, char* argv[]){
     double gridHeight = WINDOW_HEIGHT / 20.0;
 
     TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
+
+    std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
+    std::vector<GPUInstruction> GPUInstrs; std::vector<uint32_t> outOffsets; std::vector<uint32_t> outLengths;
 
     SDL_StartTextInput(window);
 
@@ -688,12 +629,10 @@ int main(int argc, char* argv[]){
             }
         }
 
-        std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
-        std::vector<GPUInstruction> GPUInstrs; std::vector<uint32_t> outOffsets; std::vector<uint32_t> outLengths;
-
         if (updateExpressions){
             updateExprs(functions, comparisons, userInput);
             updateExpressions = false;
+            exprs.clear();
 
             for (const auto& elem : functions){
                 exprs.push_back(elem.expr);
@@ -761,14 +700,14 @@ int main(int argc, char* argv[]){
             SDL_FPoint p1 = world_to_screen({float(i * gridWidth), world_top_left.y}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({float(i * gridWidth), world_bottom_right.y}, zoom, top_left);
 
-            GPURenderLine(shapeShader, p1, p2, {127, 127, 127, 127});
+            GPURenderLine(p1, p2, {127, 127, 127, 127});
         }
 
         for (int i = startGridY; i < endGridY; i++){
             SDL_FPoint p1 = world_to_screen({world_top_left.x, float(i * gridHeight)}, zoom, top_left);
             SDL_FPoint p2 = world_to_screen({world_bottom_right.x, float(i * gridHeight)}, zoom, top_left);
 
-            GPURenderLine(shapeShader, p1, p2, {127, 127, 127, 127});
+            GPURenderLine(p1, p2, {127, 127, 127, 127});
         }
 
         // Render the axis
@@ -780,7 +719,7 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        GPURenderLine(shapeShader, p1_screen, p2_screen, {255, 255, 255, 255});
+        GPURenderLine(p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
         // Horizontal line
@@ -791,7 +730,7 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
         SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
 
-        GPURenderLine(shapeShader, p1_screen, p2_screen, {255, 255, 255, 255});
+        GPURenderLine(p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
         SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
@@ -984,8 +923,6 @@ int main(int argc, char* argv[]){
         // // Clear the texture to black (RGBA = 0,0,0,255)
         // memset(pixels, 0, pitch * WINDOW_HEIGHT);
 
-        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
-
         // Render the numbers on the axis
         {
         float startNum = gridWidth + gridWidth * (startGridX-1);
@@ -1012,7 +949,7 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(startNum, 3);
             startNum += gridWidth;
 
-            renderTexts(textShader, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
+            GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
 
@@ -1045,7 +982,7 @@ int main(int argc, char* argv[]){
             number = to_string_with_precision(-startNum, 3);
             startNum += gridHeight;
 
-            renderTexts(textShader, font, number, {p1.x, p1.y}, {255, 255, 255, 255});
+            GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
 
@@ -1059,7 +996,7 @@ int main(int argc, char* argv[]){
         // Render texts
         std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
         int width = getWidthAndHeight(font, FPSText).x;
-        renderTexts(textShader, font, FPSText, {(float)WINDOW_WIDTH - width- 10, 10}, {255, 255, 255, 255});
+        GPURenderText(font, FPSText, {(float)WINDOW_WIDTH - width- 10, 10}, {255, 255, 255, 255});
 
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
@@ -1075,21 +1012,23 @@ int main(int argc, char* argv[]){
             }
 
             // Render the background and text
-            GPURenderLine(shapeShader, {2, prevRect.y + 40}, {8, prevRect.y + 40}, {255, 255, 255, 127});
+            GPURenderLine({2, prevRect.y + 40}, {8, prevRect.y + 40}, {255, 255, 255, 127});
 
-            prevRect = renderTexts(textShader, font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255, 255});
+            prevRect = GPURenderText(font, userInput[i], {prevRect.x, prevRect.y + 30}, {255, 255, 255, 255});
 
             // Background rectangle
-            GPURenderRect(shapeShader, prevRect, background, true);
+            GPURenderRect(prevRect, background, true);
             if (uiTrack == i){
                 // Render the white surrounding rectangle around the box
-                GPURenderRect(shapeShader, prevRect, {255, 255, 255, 127}, false);
+                GPURenderRect(prevRect, {255, 255, 255, 127}, false);
 
                 // Render the vertical line were at
                 float posX = getScreenPos(font, userInput[i], letterTrack, {prevRect.x, prevRect.y}).x;
-                GPURenderLine(shapeShader, {posX, prevRect.y}, {posX, prevRect.y + prevRect.h}, {255, 255, 255, 127});
+                GPURenderLine({posX, prevRect.y}, {posX, prevRect.y + prevRect.h}, {255, 255, 255, 127});
             }
         }
+
+        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         SDL_GL_SwapWindow(window);
 

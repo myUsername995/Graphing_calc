@@ -12,7 +12,8 @@ array (up until a certain size), and theyre averaged.
 
 #include "time.hpp"
 
-#define sampleSize 60
+// The higher the size -> the less reactive the counter is to big changes in dt, but also more stable
+#define sampleSize 120
 
 double dts[sampleSize];             // Keep track of the last few frames
 int track = 0;

@@ -85,7 +85,7 @@ void main()
 
         if (result) {
             // write a color (R,G,B,A). Example: teal-ish with transparency 127/255
-            vec4 c = vec4(0.0, 0.5, 1.0, 0.5); // in normalized floats
+            vec4 c = vec4(0.0, 0.5, 1.0, 1.0); // in normalized floats
             imageStore(outImage, gid, vec4(c.rgb, c.a));
             // break if we want first matching comparison only:
             // break;

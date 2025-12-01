@@ -2,12 +2,6 @@
 #include <glad/glad.h>
 #include "expression.hpp"
 
-struct ScreenQuad {
-    GLuint texture;
-    GLuint vao;
-    GLuint vbo;
-};
-
 // --- GPU-side instruction layout (matches GLSL std430 alignment) ---
 struct GPUInstruction {
     uint32_t kind;    // 0 = NUMBER, 1 = BINARY, 2 = VAR, 3 = UNARY
@@ -37,16 +31,3 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
 
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY);
-
-std::string LoadFile(const std::string& path);
-GLuint CompileShader(const std::string& source, GLenum shaderType);
-GLuint CreateProgram(GLuint vert, GLuint frag);
-GLuint CreateComputeProgram(GLuint computeShader);
-
-void drawTexture(GLuint shader, GLuint texture, GLuint vao);
-
-void initTextQuad();
-void initShapeRenderer();
-void GPURenderLine(GLuint shader, SDL_FPoint p1, SDL_FPoint p2, SDL_Color color);
-void GPURenderRect(GLuint shader, SDL_FRect pos, SDL_Color color, bool filled);
-void GPURenderText(GLuint shader, GLuint tex, SDL_FRect pos, SDL_Color color);
