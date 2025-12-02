@@ -68,7 +68,7 @@ void initQuad() {
     glBindVertexArray(0);
 }
 
-void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 0.0f, float b = 0.0f, float a = 0.5f) {
+void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 1.0f, float b = 1.0f, float a = 1.0f) {
     initQuad(); // make sure VAO/VBO/EBO are set up
 
     glUseProgram(screenShader);
@@ -91,7 +91,7 @@ void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 
 
 // --- Creating SSBOs and texture ---
 GLuint ssboInstructions = 0, ssboOffsets = 0, ssboLengths = 0;
-GLuint ssboGridSigns = 0, ssboComparisons = 0, ssboRelationSigns = 0;
+GLuint ssboGridSigns = 0, ssboComparisons = 0, ssboRelationSigns = 0, ssboColors = 0;
 GLuint outputTex = 0;
 
 void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
@@ -99,7 +99,16 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<uint32_t>& lengths,
                             const std::vector<Comparison>& comparisons,
                             const std::vector<uint32_t>& relationSigns,
+                            const std::vector<SDL_Color>& funcColors,
                             size_t funcCount){
+
+    std::vector<uint32_t> colorData;
+    colorData.reserve(funcColors.size());
+    for (const auto& c : funcColors) {
+        uint32_t packed = (c.a << 24) | (c.b << 16) | (c.g << 8) | c.r; // optional packed
+        colorData.push_back(packed);
+    }
+                            
     // Instructions SSBO
     glGenBuffers(1, &ssboInstructions);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboInstructions);
@@ -137,6 +146,11 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboRelationSigns);
     glBufferData(GL_SHADER_STORAGE_BUFFER, relationSigns.size()*sizeof(uint32_t), relationSigns.data(), GL_STATIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboRelationSigns); // binding 5
+
+    glGenBuffers(1, &ssboColors);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboColors);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, colorData.size() * sizeof(uint32_t), colorData.data(), GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboColors); // binding=6
 
     // Output image texture
     glGenTextures(1, &outputTex);
@@ -180,6 +194,10 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
 // shaderCombine: GLuint for pass 2
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY){
+                    
+    // No functions to render
+    if (comparisonCount == 0) return;
+                    
     // Bind program 1 (evaluate)
     glUseProgram(shaderEvaluate);
 
@@ -205,6 +223,8 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
     glUniform2i(glGetUniformLocation(shaderCombine, "u_res"), W, H);
     glUniform2i(glGetUniformLocation(shaderCombine, "u_cornerRes"), CORNER_W, CORNER_H);
     glUniform1ui(glGetUniformLocation(shaderCombine, "u_comparisonCount"), (GLuint)comparisonCount);
+
+    std::cout << (GLuint)comparisonCount << std::endl;
 
     int cx = (W + 15)/16;
     int cy = (H + 15)/16;

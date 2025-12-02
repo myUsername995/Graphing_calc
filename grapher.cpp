@@ -490,6 +490,7 @@ int main(int argc, char* argv[]){
 
     std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
     std::vector<GPUInstruction> GPUInstrs; std::vector<uint32_t> outOffsets; std::vector<uint32_t> outLengths;
+    std::vector<SDL_Color> funcColors;
 
     SDL_StartTextInput(window);
 
@@ -632,7 +633,7 @@ int main(int argc, char* argv[]){
         if (updateExpressions){
             updateExprs(functions, comparisons, userInput);
             updateExpressions = false;
-            exprs.clear();
+            exprs.clear(); funcColors.clear();
 
             for (const auto& elem : functions){
                 exprs.push_back(elem.expr);
@@ -641,10 +642,11 @@ int main(int argc, char* argv[]){
 
             for (const auto& elem : comparisons){
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
+                funcColors.push_back(elem.clr);
             }
 
             packExpressionsToGPU(exprs, GPUInstrs, outOffsets, outLengths);
-            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, functions.size());
+            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
         }
 
         // Get mouse state
@@ -923,6 +925,8 @@ int main(int argc, char* argv[]){
         // // Clear the texture to black (RGBA = 0,0,0,255)
         // memset(pixels, 0, pitch * WINDOW_HEIGHT);
 
+        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
+
         // Render the numbers on the axis
         {
         float startNum = gridWidth + gridWidth * (startGridX-1);
@@ -1027,8 +1031,6 @@ int main(int argc, char* argv[]){
                 GPURenderLine({posX, prevRect.y}, {posX, prevRect.y + prevRect.h}, {255, 255, 255, 127});
             }
         }
-
-        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         SDL_GL_SwapWindow(window);
 

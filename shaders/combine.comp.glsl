@@ -14,6 +14,10 @@ layout(std430, binding = 5) readonly buffer RelSignSSBO {
     uint relSigns[]; // relation sign per function
 };
 
+layout(std430, binding = 6) readonly buffer ColorsSSBO {
+    uvec4 colors[]; // RGBA per function
+};
+
 uniform ivec2 u_res;        // W,H
 uniform ivec2 u_cornerRes;  // W+1,H+1
 uniform uint u_comparisonCount;
@@ -84,14 +88,11 @@ void main()
         else if (bOp == 3u) result = color1 != color2;   // XOR
 
         if (result) {
-            // write a color (R,G,B,A). Example: teal-ish with transparency 127/255
-            vec4 c = vec4(0.0, 0.5, 1.0, 1.0); // in normalized floats
-            imageStore(outImage, gid, vec4(c.rgb, c.a));
-            // break if we want first matching comparison only:
-            // break;
+            // pick a color for one of the functions involved in this comparison
+            uvec4 uc = colors[ci];
+            vec4 c = vec4(uc.r, uc.g, uc.b, 127.0) / 255.0; // normalize 0–255 to 0.0–1.0
+            imageStore(outImage, gid, c);
+            // break; // optional: only first matching comparison
         }
     }
-
-    // If no comparison matched we leave pixel black (image initially cleared or not written).
-    // Alternatively you can explicitly write (0,0,0,1).
 }

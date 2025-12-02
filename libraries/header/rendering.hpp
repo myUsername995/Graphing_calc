@@ -27,6 +27,7 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<uint32_t>& lengths,
                             const std::vector<Comparison>& comparisons,
                             const std::vector<uint32_t>& relationSigns,
+                            const std::vector<SDL_Color>& funcColors,
                             size_t funcCount);
 
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
