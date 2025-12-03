@@ -224,8 +224,6 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
     glUniform2i(glGetUniformLocation(shaderCombine, "u_cornerRes"), CORNER_W, CORNER_H);
     glUniform1ui(glGetUniformLocation(shaderCombine, "u_comparisonCount"), (GLuint)comparisonCount);
 
-    std::cout << (GLuint)comparisonCount << std::endl;
-
     int cx = (W + 15)/16;
     int cy = (H + 15)/16;
     glDispatchCompute(cx, cy, 1);

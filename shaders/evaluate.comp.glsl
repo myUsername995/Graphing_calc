@@ -140,6 +140,7 @@ void main(){
     uint sign = (result <= 0.0) ? 0u : 1u;
 
     // index into grid: idx = funcIndex * cornerCount + gid.y * CORNER_W + gid.x
-    uint idx = funcIndex * uint(u_cornerRes.x * u_cornerRes.y) + uint(gid.y) * uint(u_cornerRes.x) + uint(gid.x);
+    // keep in mind that openGL starts (0, 0) at the bottom right corner, instead of top left
+    uint idx = funcIndex * uint(u_cornerRes.x * u_cornerRes.y) + uint(u_res.y - gid.y) * uint(u_cornerRes.x) + uint(gid.x);
     grid[idx] = sign;
 }

@@ -631,22 +631,28 @@ int main(int argc, char* argv[]){
         }
 
         if (updateExpressions){
+            // Update the expressions
             updateExprs(functions, comparisons, userInput);
-            updateExpressions = false;
-            exprs.clear(); funcColors.clear();
 
+            // Prepare the GPU for the new expressions
+            exprs.clear(); funcColors.clear(); relationSigns.clear(); cmprs.clear();
+
+            // Push from functions into simpler arrays
             for (const auto& elem : functions){
                 exprs.push_back(elem.expr);
                 relationSigns.push_back(elem.relationSign);
             }
 
+            // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
                 funcColors.push_back(elem.clr);
             }
 
+            // Pack expressions into a simpler array
             packExpressionsToGPU(exprs, GPUInstrs, outOffsets, outLengths);
-            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
+
+            updateExpressions = false;
         }
 
         // Get mouse state
@@ -924,6 +930,9 @@ int main(int argc, char* argv[]){
 
         // // Clear the texture to black (RGBA = 0,0,0,255)
         // memset(pixels, 0, pitch * WINDOW_HEIGHT);
+
+        // Create the buffers in the GPU and upload them
+        createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
 
         runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
