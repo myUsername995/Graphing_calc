@@ -210,7 +210,6 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
                 g.var = (s.var == 'x') ? 1 : 2;
             } else g.var = 0;
 
-            //std::cout << "Kind: " << g.kind << " Op: " << g.op << " Number: " << g.number << " Variable: " << g.var << std::endl;
             outInstrs.push_back(g);
         }
     }
