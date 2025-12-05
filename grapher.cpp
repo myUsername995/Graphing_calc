@@ -645,6 +645,8 @@ int main(int argc, char* argv[]){
 
             // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
+                std::cout << elem.clr.r << " " << elem.clr.g << " " << elem.clr.b << " " << elem.clr.a << std::endl;
+
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
                 funcColors.push_back(elem.clr);
             }
@@ -747,6 +749,11 @@ int main(int argc, char* argv[]){
 
         double xStep = fabs(dirX.x - start.x);
         double yStep = fabs(dirY.y - start.y);
+
+        // Create the buffers in the GPU and upload them
+        createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
+
+        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         // // X and Y are the cordinates in screen cordinates
         // for (int i = 0; i < functions.size(); i++){
@@ -930,11 +937,6 @@ int main(int argc, char* argv[]){
 
         // // Clear the texture to black (RGBA = 0,0,0,255)
         // memset(pixels, 0, pitch * WINDOW_HEIGHT);
-
-        // Create the buffers in the GPU and upload them
-        createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
-
-        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         // Render the numbers on the axis
         {

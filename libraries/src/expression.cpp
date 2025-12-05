@@ -568,6 +568,8 @@ void foldConstants(Expression& exprStack){
                     newElem = elem;
                 }
 
+                newElem.op = (Operations)0;
+
                 stack[sp++] = newElem;
                 break;
             }

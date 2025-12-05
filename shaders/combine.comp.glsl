@@ -22,7 +22,7 @@ uniform ivec2 u_res;        // W,H
 uniform ivec2 u_cornerRes;  // W+1,H+1
 uniform uint u_comparisonCount;
 
-layout(binding=0, rgba8) uniform writeonly image2D outImage;
+layout(binding=0, rgba8) uniform image2D outImage;
 
 uint readGrid(uint funcIndex, int cx, int cy){
     // bounds assumed valid
@@ -34,16 +34,16 @@ bool applyRelation(uint rel, bool allEqual, uint cornerValue) {
     bool cornerIsZero = (cornerValue == 0u);
     bool cornerIsOne  = (cornerValue == 1u);
 
-    if (rel == 0u) return !allEqual;                 
-    else if (rel == 1u) return allEqual && cornerIsZero;
-    else if (rel == 2u) return !allEqual || cornerIsZero;
-    else if (rel == 3u) return allEqual && cornerIsOne;
-    else if (rel == 4u) return !allEqual || cornerIsOne;
+    if (rel == 0u) return !allEqual;                            // "="         
+    else if (rel == 1u) return allEqual && cornerIsZero;        // "<"
+    else if (rel == 2u) return !allEqual || cornerIsZero;       // "<="
+    else if (rel == 3u) return allEqual && cornerIsOne;         // ">"
+    else if (rel == 4u) return !allEqual || cornerIsOne;        // ">="
+
     return false;
 }
 
-void main()
-{
+void main(){
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
     if (gid.x >= u_res.x || gid.y >= u_res.y) return;
 
@@ -52,7 +52,8 @@ void main()
     int x = gid.x;
     int y = gid.y;
 
-    for (uint ci = 0u; ci < u_comparisonCount; ++ci) {
+    vec4 pixelColor = vec4(0.0);
+    for (uint ci = 0u; ci < u_comparisonCount; ci++) {
         uvec4 cmp = comps[ci];
         uint idx1 = cmp.x;
         uint idx2 = cmp.y;
@@ -61,13 +62,13 @@ void main()
         // read four corners for each function
         uint a1 = readGrid(idx1, x,   y);
         uint b1 = readGrid(idx1, x+1, y);
-        uint c1 = readGrid(idx1, x,   y+1);
-        uint d1 = readGrid(idx1, x+1, y+1);
+        uint c1 = readGrid(idx1, x,   (y+1));
+        uint d1 = readGrid(idx1, x+1, (y+1));
 
         uint a2 = readGrid(idx2, x,   y);
         uint b2 = readGrid(idx2, x+1, y);
-        uint c2 = readGrid(idx2, x,   y+1);
-        uint d2 = readGrid(idx2, x+1, y+1);
+        uint c2 = readGrid(idx2, x,   (y+1));
+        uint d2 = readGrid(idx2, x+1, (y+1));
 
         bool allEqual1 = (a1 == b1) && (a1 == c1) && (a1 == d1);
         bool allEqual2 = (a2 == b2) && (a2 == c2) && (a2 == d2);
@@ -87,12 +88,14 @@ void main()
         else if (bOp == 2u) result = color1 && !color2; // DIFF
         else if (bOp == 3u) result = color1 != color2;   // XOR
 
-        if (result) {
-            // pick a color for one of the functions involved in this comparison
+        if (result){
             uvec4 uc = colors[ci];
-            vec4 c = vec4(uc.r, uc.g, uc.b, 127.0) / 255.0; // normalize 0–255 to 0.0–1.0
-            imageStore(outImage, gid, c);
-            // break; // optional: only first matching comparison
+            vec4 src = vec4(uc.x, uc.y, uc.z, 127.0) / 255.0;   // new color (with alpha)
+
+            // classic "source over" alpha blend
+            pixelColor = src.a * src + (1.0 - src.a) * pixelColor;
         }
     }
+
+    imageStore(outImage, gid, pixelColor);
 }

@@ -102,63 +102,88 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<SDL_Color>& funcColors,
                             size_t funcCount){
 
-    std::vector<uint32_t> colorData;
-    colorData.reserve(funcColors.size());
-    for (const auto& c : funcColors) {
-        uint32_t packed = (c.a << 24) | (c.b << 16) | (c.g << 8) | c.r; // optional packed
-        colorData.push_back(packed);
+    // Build color components as uint32 per-channel (r,g,b,a) to match GLSL uvec4
+    std::vector<uint32_t> colorComponents;
+    colorComponents.reserve(funcColors.size() * 4);
+    for (const auto& c : funcColors){
+        colorComponents.push_back((uint32_t)c.r);
+        colorComponents.push_back((uint32_t)c.g);
+        colorComponents.push_back((uint32_t)c.b);
+        colorComponents.push_back((uint32_t)c.a);
     }
-                            
-    // Instructions SSBO
+
+    // Instructions SSBO (binding = 0)
+    if (ssboInstructions) { glDeleteBuffers(1, &ssboInstructions); ssboInstructions = 0; }
     glGenBuffers(1, &ssboInstructions);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboInstructions);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, instrs.size()*sizeof(GPUInstruction), instrs.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboInstructions); // binding 0
+    if (!instrs.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, instrs.size()*sizeof(GPUInstruction), instrs.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW); // avoid zero-size
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboInstructions);
 
-    // Offsets
+    // Offsets SSBO (binding = 1)
+    if (ssboOffsets) { glDeleteBuffers(1, &ssboOffsets); ssboOffsets = 0; }
     glGenBuffers(1, &ssboOffsets);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOffsets);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, offsets.size()*sizeof(uint32_t), offsets.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOffsets); // binding 1
+    if (!offsets.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, offsets.size()*sizeof(uint32_t), offsets.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboOffsets);
 
-    // Lengths
+    // Lengths SSBO (binding = 2)
+    if (ssboLengths) { glDeleteBuffers(1, &ssboLengths); ssboLengths = 0; }
     glGenBuffers(1, &ssboLengths);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLengths);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, lengths.size()*sizeof(uint32_t), lengths.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboLengths); // binding 2
+    if (!lengths.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, lengths.size()*sizeof(uint32_t), lengths.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboLengths);
 
-    // Grid signs SSBO: uint per corner per function
+    // Grid signs SSBO (binding = 3) — zero-initialized
+    if (ssboGridSigns) { glDeleteBuffers(1, &ssboGridSigns); ssboGridSigns = 0; }
     size_t totalCorners = funcCount * CORNER_W * CORNER_H;
-    std::vector<uint32_t> zeroGrid(totalCorners, 0u);
+    std::vector<uint32_t> zeroGrid(totalCorners ? totalCorners : 1, 0u);
     glGenBuffers(1, &ssboGridSigns);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboGridSigns);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, totalCorners * sizeof(uint32_t), zeroGrid.data(), GL_DYNAMIC_COPY);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboGridSigns); // binding 3
+    glBufferData(GL_SHADER_STORAGE_BUFFER, zeroGrid.size() * sizeof(uint32_t), zeroGrid.data(), GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboGridSigns);
 
-    // Comparisons SSBO
+    // Comparisons SSBO (binding = 4)
+    if (ssboComparisons) { glDeleteBuffers(1, &ssboComparisons); ssboComparisons = 0; }
     glGenBuffers(1, &ssboComparisons);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboComparisons);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, comparisons.size()*sizeof(Comparison), comparisons.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboComparisons); // binding 4
+    if (!comparisons.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, comparisons.size()*sizeof(Comparison), comparisons.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboComparisons);
 
-    // RelationSigns per function
+    // Relation signs SSBO (binding = 5)
+    if (ssboRelationSigns) { glDeleteBuffers(1, &ssboRelationSigns); ssboRelationSigns = 0; }
     glGenBuffers(1, &ssboRelationSigns);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboRelationSigns);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, relationSigns.size()*sizeof(uint32_t), relationSigns.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboRelationSigns); // binding 5
+    if (!relationSigns.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, relationSigns.size()*sizeof(uint32_t), relationSigns.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboRelationSigns);
 
+    // Colors SSBO (binding = 6) — now 4 uints per color (r,g,b,a) so GLSL's uvec4 colors[] lines up
+    if (ssboColors) { glDeleteBuffers(1, &ssboColors); ssboColors = 0; }
     glGenBuffers(1, &ssboColors);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboColors);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, colorData.size() * sizeof(uint32_t), colorData.data(), GL_STATIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboColors); // binding=6
 
-    // Output image texture
-    glGenTextures(1, &outputTex);
-    glBindTexture(GL_TEXTURE_2D, outputTex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, W, H);
-    glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8); // image unit 0   
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (!colorComponents.empty())
+        glBufferData(GL_SHADER_STORAGE_BUFFER, colorComponents.size()*sizeof(uint32_t), colorComponents.data(), GL_STATIC_DRAW);
+    else
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboColors);
+
+    // unbind
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // --- CPU helper to flatten Expression -> GPUInstruction vector ---
@@ -184,6 +209,8 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
             if (s.kind == Stack::EXPR_VAR) {
                 g.var = (s.var == 'x') ? 1 : 2;
             } else g.var = 0;
+
+            //std::cout << "Kind: " << g.kind << " Op: " << g.op << " Number: " << g.number << " Variable: " << g.var << std::endl;
             outInstrs.push_back(g);
         }
     }
@@ -194,6 +221,19 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
 // shaderCombine: GLuint for pass 2
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY){
+
+    if (outputTex != 0) {
+        glDeleteTextures(1, &outputTex);
+        outputTex = 0;
+    }
+    
+    // Output image texture
+    glGenTextures(1, &outputTex);
+    glBindTexture(GL_TEXTURE_2D, outputTex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, W, H);
+    glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8); // image unit 0   
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
                     
     // No functions to render
     if (comparisonCount == 0) return;

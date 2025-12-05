@@ -36,10 +36,8 @@ float instr_number(uvec4 v) { return uintBitsToFloat(v.z); }
 int instr_var(uvec4 v) { return int(v.w); }
 
 // small stack interpreter using floats
-float applyUnary(uint op, float a)
-{
-    switch (op)
-    {
+float applyUnary(uint op, float a){
+    switch (op){
         case 0u:  // OP_NEG
             return -a;
         case 1u:  // OP_ABS
@@ -68,10 +66,36 @@ float applyUnary(uint op, float a)
     return a;
 }
 
-float applyBinary(uint op, float a, float b)
-{
-    switch (op)
-    {
+float pow_cpp(float base, float exp) {
+    // Check if exponent is a real integer (e.g., 2.0, 3.0, -1.0)
+    float expInt = floor(exp + 0.5);
+
+    // If exponent is (approximately) integer:
+    if (abs(exp - expInt) < 1e-6) {
+        // Integer exponent logic (handles negative base safely)
+        float b = base;
+        float result = 1.0;
+        int e = int(expInt);
+
+        if (e < 0) {
+            e = -e;
+            b = 1.0 / b;
+        }
+
+        while (e > 0) {
+            if (e & 1) result *= b;
+            b *= b;
+            e >>= 1;
+        }
+        return result;
+    }
+
+    // Otherwise: fall back to GLSL pow (undefined for negative base)
+    return pow(base, exp);
+}
+
+float applyBinary(uint op, float a, float b){
+    switch (op){
         case 12u: // OP_ADD
             return a + b;
         case 13u: // OP_SUB
@@ -81,7 +105,7 @@ float applyBinary(uint op, float a, float b)
         case 15u: // OP_DIV
             return a / b;
         case 16u: // OP_POW
-            return pow(a, b);
+            return pow_cpp(a, b);
         case 17u: // OP_MOD
             return mod(a, b);    // GLSL mod(a,b)
     }
@@ -105,42 +129,52 @@ void main(){
     float stack[STACK_MAX];
     int sp = 0;
 
-    for (uint i = 0u; i < len; ++i) {
+    for (uint i = 0u; i < len; i++) {
         uvec4 inst = rawInstr[offset + i];
         uint kind = instr_kind(inst);
         if (kind == 0u) { // EXPR_NUMBER
-            float v = instr_number(inst);
-            stack[sp] = v;
-            sp += 1;
-        } else if (kind == 2u) { // EXPR_VAR
+            stack[sp++] = instr_number(inst);
+        } 
+        else if (kind == 2u) { // EXPR_VAR
             int v = instr_var(inst);
-            if (v == 1) stack[sp] = worldX;
-            else if (v == 2) stack[sp] = worldY;
-            else stack[sp] = 0.0; // default/fallback
-            sp += 1;
-        } else if (kind == 3u) { // EXPR_UNARY
+            if (v == 1) stack[sp++] = worldX;
+            else if (v == 2) stack[sp++] = -worldY;
+            else stack[sp++] = 0.0; // default/fallback
+        } 
+        else if (kind == 3u) { // EXPR_UNARY
             uint op = instr_op(inst);
-            float a = stack[sp - 1];
-            sp -= 1;
-            stack[sp] = applyUnary(op, a);
-            sp += 1;
-        } else if (kind == 1u) { // EXPR_BINARY
+            float a = stack[--sp];
+            stack[sp++] = applyUnary(op, a);
+        } 
+        else if (kind == 1u) { // EXPR_BINARY
             uint op = instr_op(inst);
-            float b = stack[sp - 1];
-            sp -= 1;
-            float a = stack[sp - 1];
-            sp -= 1;
-            stack[sp] = applyBinary(op, a, b);
-            sp += 1;
+            float b = stack[--sp];
+            float a = stack[--sp];
+            stack[sp++] = applyBinary(op, a, b);
         }
     }
 
-    float result = (sp > 0) ? stack[0] : 0.0; // final result
+    float result = (sp > 0) ? stack[sp - 1] : 0.0;
+
     // Sign rule from your CPU: sign <= 0 => NEGATIVE (we will store NEGATIVE as 0, POSITIVE as 1)
     uint sign = (result <= 0.0) ? 0u : 1u;
-
     // index into grid: idx = funcIndex * cornerCount + gid.y * CORNER_W + gid.x
-    // keep in mind that openGL starts (0, 0) at the bottom right corner, instead of top left
-    uint idx = funcIndex * uint(u_cornerRes.x * u_cornerRes.y) + uint(u_res.y - gid.y) * uint(u_cornerRes.x) + uint(gid.x);
+    // keep in mind that openGL starts (0, 0) at the bottom left corner, instead of top left
+
+    // When indexing into the 3D array grid, you use grid[z][y][x]
+    // With a flat array, its different ->
+    // bigArrayIndex -> essentially specifies the z index
+    // smallArrayIndex -> specifies the y and x indexes
+
+    uint bigArrayIndex = funcIndex * uint(u_cornerRes.x * u_cornerRes.y);
+    // flip Y so 0 is bottom row (if that's intended)
+    uint row = uint(u_cornerRes.y - 1 - gid.y);   // use u_cornerRes.y, not u_res.y, and -1
+    uint smallArrayIndex = row * uint(u_cornerRes.x) + uint(gid.x);
+
+    // We should only modify values within our z index, if smallArrayIndex is bigger (or equal) than the size of one z index, then 
+    // we would be going outside of our z index into the z+1 index
+    if (smallArrayIndex >= uint(u_cornerRes.x * u_cornerRes.y)) return;
+
+    uint idx = bigArrayIndex + smallArrayIndex;
     grid[idx] = sign;
 }
