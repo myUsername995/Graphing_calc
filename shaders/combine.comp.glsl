@@ -25,6 +25,9 @@ uniform uint u_comparisonCount;
 layout(binding=0, rgba8) uniform image2D outImage;
 
 uint readGrid(uint funcIndex, int cx, int cy){
+    cx = clamp(cx, 0, u_cornerRes.x-1);
+    cy = clamp(cy, 0, u_cornerRes.y-1);
+
     // bounds assumed valid
     uint idx = funcIndex * uint(u_cornerRes.x * u_cornerRes.y) + uint(cy) * uint(u_cornerRes.x) + uint(cx);
     return uint(grid[idx]);
@@ -88,9 +91,14 @@ void main(){
         else if (bOp == 2u) result = color1 && !color2; // DIFF
         else if (bOp == 3u) result = color1 != color2;   // XOR
 
-        if (result){
+        bool boundary = !allEqual1 || !allEqual2;
+
+        // Always colour the boundary + any additional pixels
+        if (result || boundary){
             uvec4 uc = colors[ci];
-            vec4 src = vec4(uc.x, uc.y, uc.z, 127.0) / 255.0;   // new color (with alpha)
+            float alpha = boundary ? 255.0 : 127.0;
+
+            vec4 src = vec4(uc.x, uc.y, uc.z, alpha) / 255.0;   // new color (with alpha)
 
             // classic "source over" alpha blend
             pixelColor = src.a * src + (1.0 - src.a) * pixelColor;

@@ -453,7 +453,7 @@ int main(int argc, char* argv[]){
     int letterTrack = 0;
 
     // Normal distribution
-    std::vector<std::string> userInput = {"func a = y < x^100", "comp a || a"};
+    std::vector<std::string> userInput = {"func a = y^2 / a^2 + x^2 / b^2 < 1", "var a = 5", "var b = 10", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;

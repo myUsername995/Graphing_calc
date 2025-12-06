@@ -145,7 +145,7 @@ void main(){
     float result = (sp > 0) ? stack[sp - 1] : 0.0;
 
     // Sign rule from your CPU: sign <= 0 => NEGATIVE (we will store NEGATIVE as 0, POSITIVE as 1)
-    uint sign = (result <= 0.0) ? 0u : 1u;
+    uint sign = (result <= 0) ? 0u : 1u;
     // index into grid: idx = funcIndex * cornerCount + gid.y * CORNER_W + gid.x
     // keep in mind that openGL starts (0, 0) at the bottom left corner, instead of top left
 
