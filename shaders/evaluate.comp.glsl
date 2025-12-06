@@ -70,27 +70,15 @@ float pow_cpp(float base, float exp) {
     // Check if exponent is a real integer (e.g., 2.0, 3.0, -1.0)
     float expInt = floor(exp + 0.5);
 
+    int intExponentLimit = 25;
+
     // If exponent is (approximately) integer:
-    if (abs(exp - expInt) < 1e-6) {
-        // Integer exponent logic (handles negative base safely)
-        float b = base;
-        float result = 1.0;
-        int e = int(expInt);
-
-        if (e < 0) {
-            e = -e;
-            b = 1.0 / b;
-        }
-
-        while (e > 0) {
-            if (e & 1) result *= b;
-            b *= b;
-            e >>= 1;
-        }
-        return result;
+    if (abs(exp - expInt) < 1e-6 && exp < intExponentLimit){
+        float r = 1.0;
+        for(int i=0;i<expInt;i++) r*=base;
+        return r;
     }
 
-    // Otherwise: fall back to GLSL pow (undefined for negative base)
     return pow(base, exp);
 }
 

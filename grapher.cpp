@@ -453,7 +453,7 @@ int main(int argc, char* argv[]){
     int letterTrack = 0;
 
     // Normal distribution
-    std::vector<std::string> userInput = {"func a = y < -x", "comp a || a"};
+    std::vector<std::string> userInput = {"func a = y < x^100", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     std::vector<compare> comparisons;
@@ -485,6 +485,8 @@ int main(int argc, char* argv[]){
 
     double gridWidth = WINDOW_WIDTH / 20.0;
     double gridHeight = WINDOW_HEIGHT / 20.0;
+
+    double FPS;
 
     TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
 
@@ -654,6 +656,9 @@ int main(int argc, char* argv[]){
             // Pack expressions into a simpler array
             packExpressionsToGPU(exprs, GPUInstrs, outOffsets, outLengths);
 
+            // Create the buffers in the GPU and upload them
+            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
+
             updateExpressions = false;
         }
 
@@ -749,9 +754,6 @@ int main(int argc, char* argv[]){
 
         double xStep = fabs(dirX.x - start.x);
         double yStep = fabs(dirY.y - start.y);
-
-        // Create the buffers in the GPU and upload them
-        createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
 
         runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
@@ -1001,18 +1003,6 @@ int main(int argc, char* argv[]){
         }
         }
 
-        double dt = end(clk);
-
-        // We cap the FPS, so make the counter match the actual FPS
-        if (dt < 1000.0 / fps) dt = 1000.0 / fps;
-
-        double FPS = calculateFPS(dt);
-
-        // Render texts
-        std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
-        int width = getWidthAndHeight(font, FPSText).x;
-        GPURenderText(font, FPSText, {(float)WINDOW_WIDTH - width- 10, 10}, {255, 255, 255, 255});
-
         SDL_FRect prevRect = {10, -20};
         int clrTrack = 0;
         // Render user inputs
@@ -1043,7 +1033,20 @@ int main(int argc, char* argv[]){
             }
         }
 
+        // Were actually showing the previously calculated FPS, but its fine because its atleast accurate
+        // Render texts
+        std::string FPSText = "FPS: " + to_string_with_precision(FPS, 0);
+        int width = getWidthAndHeight(font, FPSText).x;
+        GPURenderText(font, FPSText, {(float)WINDOW_WIDTH - width- 10, 10}, {255, 255, 255, 255});
+
         SDL_GL_SwapWindow(window);
+
+        double dt = end(clk);
+
+        // We cap the FPS, so make the counter match the actual FPS
+        if (dt < 1000.0 / fps) dt = 1000.0 / fps;
+
+        FPS = calculateFPS(dt);
 
         // Cap the FPS
         if (dt < 1000.0 / fps){

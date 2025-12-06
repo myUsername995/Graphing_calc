@@ -312,10 +312,11 @@ void createShaders(){
                                     CompileShader(text_vert, GL_VERTEX_SHADER));
 }
 
+// Creates openGL context, loads glad, initializes text and shape rendering, sets default settings, creaters shaders
 void initalizeGPU(SDL_Window* window){
     SDL_GLContext glctx = SDL_GL_CreateContext(window);
-
     SDL_GL_MakeCurrent(window, glctx);
+
     gladLoadGL();
     initTextQuad();
     initShapeRenderer();

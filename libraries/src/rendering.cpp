@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include "rendering.hpp"
+#include "time.hpp"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
@@ -92,7 +93,6 @@ void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 
 // --- Creating SSBOs and texture ---
 GLuint ssboInstructions = 0, ssboOffsets = 0, ssboLengths = 0;
 GLuint ssboGridSigns = 0, ssboComparisons = 0, ssboRelationSigns = 0, ssboColors = 0;
-GLuint outputTex = 0;
 
 void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<uint32_t>& offsets,
@@ -215,25 +215,29 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
     }
 }
 
+GLuint outputTex = 0;
+int outputW = 0, outputH = 0;
+
+void ensureOutputTexture(int W, int H) {
+    if (outputTex == 0 || outputW != W || outputH != H) {
+        glGenTextures(1, &outputTex);
+        glBindTexture(GL_TEXTURE_2D, outputTex);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, W, H);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        outputW = W; outputH = H;
+    }
+}
+
 // --- Dispatching compute shaders ---
 // shaderEvaluate: GLuint of the compiled compute shader program for pass 1
 // shaderCombine: GLuint for pass 2
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY){
 
-    if (outputTex != 0) {
-        glDeleteTextures(1, &outputTex);
-        outputTex = 0;
-    }
-    
-    // Output image texture
-    glGenTextures(1, &outputTex);
-    glBindTexture(GL_TEXTURE_2D, outputTex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, W, H);
-    glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8); // image unit 0   
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-                    
+    ensureOutputTexture(W, H);
+    glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
+                        
     // No functions to render
     if (comparisonCount == 0) return;
                     
@@ -250,6 +254,7 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
     int gx = (CORNER_W + 15) / 16;
     int gy = (CORNER_H + 15) / 16;
     int gz = (int)funcCount; // we dispatch z by funcCount (one slice per function)
+
     glDispatchCompute(gx, gy, gz);
 
     // Wait for SSBO writes to be visible to next stage
@@ -265,6 +270,7 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
 
     int cx = (W + 15)/16;
     int cy = (H + 15)/16;
+    
     glDispatchCompute(cx, cy, 1);
 
     // Make sure the image writes are finished before rendering
