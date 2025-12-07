@@ -1,4 +1,25 @@
-// --- includes ---
+/*
+A library to graph functions using compute shaders on the GPU.
+
+There are 3 main functions, with the other ones are helper functions:
+-packExpressionsToGPU() -> takes a std::vector<> of Expr structs, which store expressions in a stack (array), and converts it into 
+an array of GPUInstructions that gets uploaded to the GPU later
+
+-createBuffersAndUpload() -> creates buffers for the compute shader and uploads them. 
+0: array of whole expressions, essentially all the expressions the user inputted. 
+1: The offsets between the different expressions in the 1st array. 
+2: The lengths of each expression in the 1st array. 
+3: A 3D array of 2D arrays that stores every corner on the screen, each corner can be negative, zero or positive. 
+4: Comparisons array used to compare between functions. Every element has three attributes: index1, index2, boolean operator 
+(between the first 2 functions). 
+5: Relation signs array, used to store all the relation signs for each function. 
+6: Colors array, used to store the colors of each function
+
+-runCompute() -> runs the evaluate and combine shader. The evaluate shader assigns values for every function's gridSigns array, 
+so that you get what each function looks like individually. This is where the expressions are evaluated. 
+The combine shader looks at all the comparisons, and then renders the resulting functions onto one texture.
+
+*/
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <vector>
@@ -8,13 +29,10 @@
 #include <sstream>
 #include "rendering.hpp"
 #include "time.hpp"
+#include "windowSize.hpp"
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 800
-
-// --- useful consts ---
-const int W = WINDOW_WIDTH;           // e.g. 1280
-const int H = WINDOW_HEIGHT;          // e.g. 720
+const int W = WINDOW_WIDTH;
+const int H = WINDOW_HEIGHT;
 const int CORNER_W = W + 1;
 const int CORNER_H = H + 1;
 
@@ -246,8 +264,8 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
 
     // Setting the uniforms
     glUniform4f(glGetUniformLocation(shaderEvaluate, "u_screenParams"), startX, startY, stepX, stepY);
-    glUniform2i(glGetUniformLocation(shaderEvaluate, "u_res"), W, H);
-    glUniform2i(glGetUniformLocation(shaderEvaluate, "u_cornerRes"), CORNER_W, CORNER_H);
+    glUniform2i(glGetUniformLocation(shaderEvaluate, "u_Res"), W, H);
+    glUniform2i(glGetUniformLocation(shaderEvaluate, "u_CornerRes"), CORNER_W, CORNER_H);
 
     // Dispatch evaluate for all corner points per-function
     // Workgroup layout chosen in shader e.g. local_size_x=16, local_size_y=16

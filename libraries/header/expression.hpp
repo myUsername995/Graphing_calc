@@ -30,7 +30,6 @@ typedef enum {
     TOKEN_ASIN,
     TOKEN_ACOS,
     TOKEN_ATAN,
-    TOKEN_FAC,
     TOKEN_FLOOR,
     TOKEN_VAR,
     TOKEN_END

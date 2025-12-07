@@ -68,9 +68,7 @@ Besides the way the numbers are plotted on the axis is a mystery to me, I just c
 #include "time.hpp"                     // Timings for benchmarking and FPS
 #include "GPU.hpp"                      // General drawing functions compatible with openGL
 #include "rendering.hpp"                // Specific rendering of functions
-
-#define WINDOW_HEIGHT 800
-#define WINDOW_WIDTH 800
+#include "windowSize.hpp"               // Silly library
 
 std::array<SDL_Color, 9> colors = {
     SDL_Color{255, 0, 0, 127},   // Red
@@ -451,10 +449,10 @@ int main(int argc, char* argv[]){
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-
-    // Normal distribution
-    std::vector<std::string> userInput = {"func a = y^2 / a^2 + x^2 / b^2 < 1", "var a = 5", "var b = 10", "comp a || a"};
+    std::vector<std::string> userInput = {"func a = y^2 + x^2 < 25", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
+
+    if (uiSize > 0) letterTrack = userInput[uiTrack].size();
 
     std::vector<compare> comparisons;
     std::vector<Function> functions;
@@ -647,8 +645,6 @@ int main(int argc, char* argv[]){
 
             // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
-                std::cout << elem.clr.r << " " << elem.clr.g << " " << elem.clr.b << " " << elem.clr.a << std::endl;
-
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
                 funcColors.push_back(elem.clr);
             }

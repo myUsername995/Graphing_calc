@@ -24,6 +24,17 @@ once, so I wasn't really concerned with optimising the compilation.
 For the variables, it uses an array instead of a hashtable, but it still works like a hashtable. You have to index into this array 
 using the variable name itself, eg. vars['a'] to get back the actual variables value. This is much faster than a hashtable, and 256 
 slots can store all of the English Alphabets characters.
+
+It also can fold constants, but only for simple cases, where the two constants appear right beside eachother on the stack. Constant 
+variables are folded by looking up the current value of the variable in the hashtable, which should have been set before it was made into 
+a constant variable, althought my parser doesn't really check if the variable really is constant. 
+
+The cases where it can fold constants: x * (2 + 3) -> x * 5; 2 * 3 + 4 -> 10; a^2 + x (where const a = 5) -> 25 + x
+The cases where it can't fold them: 2 * x * 4; x - 2 + 4; a - x + 2 (where const a = 5)
+
+Why it cant fold them in these cases? Because the expressions are essentially parsed as 2 * (x * 4), and I would need to open up 
+the parenthesis in order to fold the constants, which would require me to implement algebraic manipulation into my parser, which I 
+didn't bother with.
 */
 
 
@@ -178,11 +189,6 @@ static void tokenize(const char* input){
                         tokens[token_count++].type = TOKEN_ATAN;
 
                         i += 3;
-                    }
-                    else if (checkInput(input, "fac", i)){
-                        tokens[token_count++].type = TOKEN_FAC;
-
-                        i += 2;
                     }
                     else if (checkInput(input, "floor", i)){
                         tokens[token_count++].type = TOKEN_FLOOR;

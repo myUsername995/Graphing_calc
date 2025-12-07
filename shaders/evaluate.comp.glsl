@@ -26,8 +26,8 @@ layout(std430, binding = 5) readonly buffer RelSignSSBO {
 
 // Screen params as uniforms
 uniform vec4 u_screenParams; // (startX, startY, stepX, stepY)
-uniform ivec2 u_res;         // (W, H)
-uniform ivec2 u_cornerRes;   // (W+1, H+1)
+uniform ivec2 u_Res;         // (W, H)
+uniform ivec2 u_CornerRes;   // (W+1, H+1)
 
 // Instr layout helpers
 uint instr_kind(uvec4 v) { return v.x; }
@@ -103,7 +103,7 @@ float applyBinary(uint op, float a, float b){
 void main(){
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy); // corner x,y
     uint funcIndex = uint(gl_WorkGroupID.z);     // we dispatched gz = funcCount
-    if (gid.x >= u_cornerRes.x || gid.y >= u_cornerRes.y) return;
+    if (gid.x >= u_CornerRes.x || gid.y >= u_CornerRes.y) return;
     // compute world coords for this corner
     float worldX = u_screenParams.x + float(gid.x) * u_screenParams.z; // startX + x * stepX
     float worldY = u_screenParams.y + float(gid.y) * u_screenParams.w; // startY + y * stepY
@@ -154,14 +154,14 @@ void main(){
     // bigArrayIndex -> essentially specifies the z index
     // smallArrayIndex -> specifies the y and x indexes
 
-    uint bigArrayIndex = funcIndex * uint(u_cornerRes.x * u_cornerRes.y);
+    uint bigArrayIndex = funcIndex * uint(u_CornerRes.x * u_CornerRes.y);
     // flip Y so 0 is bottom row (if that's intended)
-    uint row = uint(u_cornerRes.y - 1 - gid.y);   // use u_cornerRes.y, not u_res.y, and -1
-    uint smallArrayIndex = row * uint(u_cornerRes.x) + uint(gid.x);
+    uint row = uint(u_CornerRes.y - 1 - gid.y);   // use u_CornerRes.y, not u_res.y, and -1
+    uint smallArrayIndex = row * uint(u_CornerRes.x) + uint(gid.x);
 
     // We should only modify values within our z index, if smallArrayIndex is bigger (or equal) than the size of one z index, then 
     // we would be going outside of our z index into the z+1 index
-    if (smallArrayIndex >= uint(u_cornerRes.x * u_cornerRes.y)) return;
+    if (smallArrayIndex >= uint(u_CornerRes.x * u_CornerRes.y)) return;
 
     uint idx = bigArrayIndex + smallArrayIndex;
     grid[idx] = sign;

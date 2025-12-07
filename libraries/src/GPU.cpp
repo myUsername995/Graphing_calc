@@ -8,13 +8,10 @@
 #include <sstream>
 #include <iostream>
 #include "GPU.hpp"
+#include "windowSize.hpp"
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 800
-
-// --- useful consts ---
-const int W = WINDOW_WIDTH;           // e.g. 1280
-const int H = WINDOW_HEIGHT;          // e.g. 720
+const int W = WINDOW_WIDTH;
+const int H = WINDOW_HEIGHT;
 
 GLuint shapeShader;
 GLuint textShader;
