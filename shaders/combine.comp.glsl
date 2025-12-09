@@ -1,4 +1,5 @@
 #version 430
+
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(std430, binding = 3) readonly buffer GridSSBO {
@@ -91,12 +92,12 @@ void main(){
         else if (bOp == 2u) result = color1 && !color2; // DIFF
         else if (bOp == 3u) result = color1 != color2;   // XOR
 
-        bool boundary = !allEqual1 || !allEqual2;
+        bool isBoundary = !allEqual1 || !allEqual2;
 
         // Always colour the boundary + any additional pixels
-        if (result || boundary){
+        if (result || isBoundary){
             uvec4 uc = colors[ci];
-            float alpha = boundary ? 255.0 : 127.0;
+            float alpha = isBoundary ? 255.0 : 127.0;
 
             vec4 src = vec4(uc.x, uc.y, uc.z, alpha) / 255.0;   // new color (with alpha)
 

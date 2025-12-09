@@ -68,7 +68,9 @@ Besides the way the numbers are plotted on the axis is a mystery to me, I just c
 #include "time.hpp"                     // Timings for benchmarking and FPS
 #include "GPU.hpp"                      // General drawing functions compatible with openGL
 #include "rendering.hpp"                // Specific rendering of functions
-#include "windowSize.hpp"               // Silly library
+
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 800
 
 std::array<SDL_Color, 9> colors = {
     SDL_Color{255, 0, 0, 127},   // Red
@@ -422,15 +424,8 @@ int main(int argc, char* argv[]){
 
     SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
 
-    initalizeGPU(window);
-
-    // Used to evaluate the function
-    GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders//evaluate.comp.glsl"), GL_COMPUTE_SHADER));
-    GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders//combine.comp.glsl"), GL_COMPUTE_SHADER));
-
-    // Used to render the graph
-    GLuint screenShader = CreateProgram(CompileShader(LoadFile("shaders//screenShader.vert"), GL_VERTEX_SHADER), 
-                                        CompileShader(LoadFile("shaders//screenShader.frag"), GL_FRAGMENT_SHADER));
+    initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT);
+    initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT);
 
     bool leftMouseDown = false;
     bool updateExpressions = true;
@@ -449,7 +444,7 @@ int main(int argc, char* argv[]){
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"func a = y^2 + x^2 < 25", "comp a || a"};
+    std::vector<std::string> userInput = {"func a = x < y", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     if (uiSize > 0) letterTrack = userInput[uiTrack].size();
@@ -751,7 +746,7 @@ int main(int argc, char* argv[]){
         double xStep = fabs(dirX.x - start.x);
         double yStep = fabs(dirY.y - start.y);
 
-        runCompute(shaderEvaluate, shaderCombine, screenShader, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
+        runCompute(functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         // // X and Y are the cordinates in screen cordinates
         // for (int i = 0; i < functions.size(); i++){

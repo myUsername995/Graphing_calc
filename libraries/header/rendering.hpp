@@ -30,5 +30,6 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
                             const std::vector<SDL_Color>& funcColors,
                             size_t funcCount);
 
-void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
-                float startX, float startY, float stepX, float stepY);
+void runCompute(size_t funcCount, size_t comparisonCount, float startX, float startY, float stepX, float stepY);
+
+int initializeRendering(int window_width, int window_height);

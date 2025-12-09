@@ -8,10 +8,8 @@
 #include <sstream>
 #include <iostream>
 #include "GPU.hpp"
-#include "windowSize.hpp"
 
-const int W = WINDOW_WIDTH;
-const int H = WINDOW_HEIGHT;
+static int W, H;
 
 GLuint shapeShader;
 GLuint textShader;
@@ -36,6 +34,8 @@ GLuint CompileShader(const std::string& source, GLenum shaderType) {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
         std::cerr << "Shader compile error:\n" << infoLog << std::endl;
+
+        return -1;
     }
     return shader;
 }
@@ -53,6 +53,8 @@ GLuint CreateProgram(GLuint vert, GLuint frag) {
         char infoLog[512];
         glGetProgramInfoLog(program, 512, nullptr, infoLog);
         std::cerr << "Program link error:\n" << infoLog << std::endl;
+
+        return -1;
     }
     return program;
 }
@@ -68,6 +70,8 @@ GLuint CreateComputeProgram(GLuint computeShader){
         char log[1024];
         glGetProgramInfoLog(program, 1024, NULL, log);
         printf("Compute shader link error:\n%s\n", log);
+
+        return -1;
     }
 
     glDetachShader(program, computeShader);
@@ -187,12 +191,13 @@ void GPURenderTextTexture(GLuint tex, SDL_FRect pos, SDL_Color color){
 
     // Build vertices in NDC
     float verts[] = {
-        2.0f * x / float(W) - 1.0f, 1.0f - 2.0f * y / float(H), 0.0f, 0.0f,
-        2.0f * (x + w) / float(W) - 1.0f, 1.0f - 2.0f * y / float(H), 1.0f, 0.0f,
-        2.0f * (x + w) / float(W) - 1.0f, 1.0f - 2.0f * (y + h) / float(H), 1.0f, 1.0f,
-        2.0f * x / float(W) - 1.0f, 1.0f - 2.0f * y / float(H), 0.0f, 0.0f,
-        2.0f * (x + w) / float(W) - 1.0f, 1.0f - 2.0f * (y + h) / float(H), 1.0f, 1.0f,
-        2.0f * x / float(W) - 1.0f, 1.0f - 2.0f * (y + h) / float(H), 0.0f, 1.0f
+        sx(x), sy(y), 0.0f, 0.0f,
+        sx(x+w), sy(y), 1.0f, 0.0f,
+        sx(x+w), sy(y+h), 1.0f, 1.0f,
+
+        sx(x), sy(y), 0.0f, 0.0f,
+        sx(x+w), sy(y+h), 1.0f, 1.0f,
+        sx(x), sy(y+h), 0.0f, 1.0f
     };
 
     glBindBuffer(GL_ARRAY_BUFFER, textVBO);
@@ -297,11 +302,6 @@ void createShaders(){
     "    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
     "}\n";
 
-    std::string LoadFile(const std::string& path);
-    GLuint CompileShader(const std::string& source, GLenum shaderType);
-    GLuint CreateProgram(GLuint vert, GLuint frag);
-    GLuint CreateComputeProgram(GLuint computeShader);
-
     shapeShader = CreateProgram(CompileShader(shape_frag, GL_FRAGMENT_SHADER), 
                                     CompileShader(shape_vert, GL_VERTEX_SHADER));
 
@@ -310,7 +310,7 @@ void createShaders(){
 }
 
 // Creates openGL context, loads glad, initializes text and shape rendering, sets default settings, creaters shaders
-void initalizeGPU(SDL_Window* window){
+void initalizeGPU(SDL_Window* window, int window_width, int window_height){
     SDL_GLContext glctx = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, glctx);
 
@@ -322,4 +322,7 @@ void initalizeGPU(SDL_Window* window){
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     createShaders();
+
+    W = window_width;
+    H = window_height;
 }

@@ -28,13 +28,11 @@ The combine shader looks at all the comparisons, and then renders the resulting 
 #include <fstream>
 #include <sstream>
 #include "rendering.hpp"
+#include "GPU.hpp"
 #include "time.hpp"
-#include "windowSize.hpp"
 
-const int W = WINDOW_WIDTH;
-const int H = WINDOW_HEIGHT;
-const int CORNER_W = W + 1;
-const int CORNER_H = H + 1;
+static int W, H, CORNER_W, CORNER_H;
+GLuint shaderEvaluate, shaderCombine, screenShader;
 
 // Mirror these enums on the GLSL side!
 enum InstrKind : uint32_t { EXPR_NUMBER = 0, EXPR_BINARY = 1, EXPR_VAR = 2, EXPR_UNARY = 3 };
@@ -45,25 +43,25 @@ enum RelSign : uint32_t { REL_EQ=0, REL_LT=1, REL_LTE=2, REL_GT=3, REL_GTE=4 };
 // boolean combinators for comparisons
 enum BoolOp : uint32_t { BOOL_AND=0, BOOL_OR=1, BOOL_DIFF=2, BOOL_XOR=3 };
 
-// Vertex data for a full-screen quad (NDC)
-static const float quadVertices[] = {
-    // positions   // uvs
-    -1.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-     1.0f, -1.0f, 1.0f, 0.0f, // bottom-right
-     1.0f,  1.0f, 1.0f, 1.0f, // top-right
-    -1.0f,  1.0f, 0.0f, 1.0f  // top-left
-};
-
-static const unsigned int quadIndices[] = {
-    0, 1, 2,
-    2, 3, 0
-};
-
 // Globals for VAO/VBO/EBO
 static GLuint quadVAO = 0, quadVBO = 0, quadEBO = 0;
 
 void initQuad() {
     if (quadVAO != 0) return; // already initialized
+
+    // Vertex data for a full-screen quad (NDC)
+    static const float quadVertices[] = {
+        // positions   // uvs
+        -1.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+        1.0f, -1.0f, 1.0f, 0.0f, // bottom-right
+        1.0f,  1.0f, 1.0f, 1.0f, // top-right
+        -1.0f,  1.0f, 0.0f, 1.0f  // top-left
+    };
+
+    static const unsigned int quadIndices[] = {
+        0, 1, 2,
+        2, 3, 0
+    };
 
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
@@ -199,9 +197,6 @@ void createBuffersAndUpload(const std::vector<GPUInstruction>& instrs,
     else
         glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboColors);
-
-    // unbind
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // --- CPU helper to flatten Expression -> GPUInstruction vector ---
@@ -236,7 +231,10 @@ void packExpressionsToGPU(const std::vector<Expression>& exprs,
 GLuint outputTex = 0;
 int outputW = 0, outputH = 0;
 
-void ensureOutputTexture(int W, int H) {
+// --- Dispatching compute shaders ---
+// shaderEvaluate: GLuint of the compiled compute shader program for pass 1
+// shaderCombine: GLuint for pass 2
+void runCompute(size_t funcCount, size_t comparisonCount, float startX, float startY, float stepX, float stepY){
     if (outputTex == 0 || outputW != W || outputH != H) {
         glGenTextures(1, &outputTex);
         glBindTexture(GL_TEXTURE_2D, outputTex);
@@ -245,15 +243,6 @@ void ensureOutputTexture(int W, int H) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         outputW = W; outputH = H;
     }
-}
-
-// --- Dispatching compute shaders ---
-// shaderEvaluate: GLuint of the compiled compute shader program for pass 1
-// shaderCombine: GLuint for pass 2
-void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader, size_t funcCount, size_t comparisonCount, 
-                float startX, float startY, float stepX, float stepY){
-
-    ensureOutputTexture(W, H);
     glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
                         
     // No functions to render
@@ -295,4 +284,22 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, GLuint screenShader
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
 
     drawTexture(screenShader, outputTex);
+}
+
+int initializeRendering(int window_width, int window_height){
+    W = window_width; H = window_height;
+    CORNER_W = window_width + 1; CORNER_H = window_height + 1;
+    std::string basePath = "C:\\Files\\Cpp_files\\silly\\Grapher\\shaders\\";
+
+    // Used to evaluate the function
+    shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile(basePath + "evaluate.comp.glsl"), GL_COMPUTE_SHADER));
+    shaderCombine = CreateComputeProgram(CompileShader(LoadFile(basePath + "combine.comp.glsl"), GL_COMPUTE_SHADER));
+
+    // Used to render the graph
+    screenShader = CreateProgram(CompileShader(LoadFile(basePath + "screenShader.vert"), GL_VERTEX_SHADER), 
+                                        CompileShader(LoadFile(basePath + "screenShader.frag"), GL_FRAGMENT_SHADER));
+
+    if (shaderEvaluate == -1 || shaderCombine == -1 || screenShader == -1) return -1;
+
+    return 1;
 }
