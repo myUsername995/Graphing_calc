@@ -86,8 +86,6 @@ void initQuad() {
 }
 
 void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 1.0f, float b = 1.0f, float a = 1.0f) {
-    initQuad(); // make sure VAO/VBO/EBO are set up
-
     glUseProgram(screenShader);
 
     // set uniform color
@@ -287,6 +285,8 @@ void runCompute(size_t funcCount, size_t comparisonCount, float startX, float st
 }
 
 int initializeRendering(int window_width, int window_height){
+    initQuad();
+
     W = window_width; H = window_height;
     CORNER_W = window_width + 1; CORNER_H = window_height + 1;
     std::string basePath = "C:\\Files\\Cpp_files\\silly\\Grapher\\shaders\\";
