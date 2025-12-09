@@ -15,5 +15,21 @@ uniform ivec2 u_Res;         // (W, H)
 uniform ivec2 u_CornerRes;   // (W+1, H+1)
 
 void main(){
-    
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy); // corner x,y
+    if (gid.x >= u_CornerRes.x || gid.y >= u_CornerRes.y) return;
+
+    uint funcIndex = uint(gl_WorkGroupID.z);     // we dispatched gz = funcCount
+
+    // Call the evaluation function here!!!!!!
+    float result = expr(x, y);
+
+    uint bigArrayIndex = funcIndex * uint(u_CornerRes.x * u_CornerRes.y);
+    uint row = uint(u_CornerRes.y - 1 - gid.y);
+    uint smallArrayIndex = row * uint(u_CornerRes.x) + uint(gid.x);
+
+    if (smallArrayIndex >= uint(u_CornerRes.x * u_CornerRes.y)) return;
+
+    uint idx = bigArrayIndex + smallArrayIndex;
+
+    grid[idx] = sign;   
 }
