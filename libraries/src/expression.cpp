@@ -668,16 +668,16 @@ Expression parseInput(std::string input){
     // Fold constants
     foldConstants(exprStack);
 
-    // // Print the postfix notation for visuals
-    // for (auto elem : exprStack){
-    //     if (elem.kind == Stack::EXPR_NUMBER) std::cout << elem.number;
-    //     if (elem.kind == Stack::EXPR_VAR) std::cout << elem.var;
-    //     if (elem.kind == Stack::EXPR_UNARY) printOp(elem.op);
-    //     if (elem.kind == Stack::EXPR_BINARY) printOp(elem.op);
+    // Print the postfix notation for visuals
+    for (auto elem : exprStack){
+        if (elem.kind == Stack::EXPR_NUMBER) std::cout << elem.number;
+        if (elem.kind == Stack::EXPR_VAR) std::cout << elem.var;
+        if (elem.kind == Stack::EXPR_UNARY) printOp(elem.op);
+        if (elem.kind == Stack::EXPR_BINARY) printOp(elem.op);
 
-    //     std::cout << " ";
-    // }
-    // std::cout << "\n";
+        std::cout << " ";
+    }
+    std::cout << "\n";
 
     free(tokens);
     

@@ -425,7 +425,15 @@ int main(int argc, char* argv[]){
     SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
 
     initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT);
-    initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT);
+    
+    int error = initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT);
+    if (error == -1) return 0;
+
+    // Used to evaluate the function
+    GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
+    GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders\\combine.comp.glsl"), GL_COMPUTE_SHADER));
+
+    if (shaderEvaluate == -1 || shaderCombine == -1) return 0;
 
     bool leftMouseDown = false;
     bool updateExpressions = true;
@@ -484,7 +492,6 @@ int main(int argc, char* argv[]){
     TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
 
     std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
-    std::vector<GPUInstruction> GPUInstrs; std::vector<uint32_t> outOffsets; std::vector<uint32_t> outLengths;
     std::vector<SDL_Color> funcColors;
 
     SDL_StartTextInput(window);
@@ -638,17 +645,17 @@ int main(int argc, char* argv[]){
                 relationSigns.push_back(elem.relationSign);
             }
 
+            std::string newShader = appendEvaluationFunction(exprs);
+            shaderEvaluate = CreateComputeProgram(CompileShader(newShader, GL_COMPUTE_SHADER));
+
             // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
                 funcColors.push_back(elem.clr);
             }
 
-            // Pack expressions into a simpler array
-            packExpressionsToGPU(exprs, GPUInstrs, outOffsets, outLengths);
-
             // Create the buffers in the GPU and upload them
-            createBuffersAndUpload(GPUInstrs, outOffsets, outLengths, cmprs, relationSigns, funcColors, functions.size());
+            createBuffersAndUpload(cmprs, relationSigns, funcColors, functions.size());
 
             updateExpressions = false;
         }
@@ -746,7 +753,7 @@ int main(int argc, char* argv[]){
         double xStep = fabs(dirX.x - start.x);
         double yStep = fabs(dirY.y - start.y);
 
-        runCompute(functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
+        runCompute(shaderEvaluate, shaderCombine, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
 
         // // X and Y are the cordinates in screen cordinates
         // for (int i = 0; i < functions.size(); i++){

@@ -2,20 +2,20 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 3) readonly buffer GridSSBO {
+layout(std430, binding = 0) readonly buffer GridSSBO {
     uint grid[]; // as written in pass1
 };
 
-layout(std430, binding = 4) readonly buffer ComparisonsSSBO {
+layout(std430, binding = 1) readonly buffer ComparisonsSSBO {
     // each comparison: index1, index2, booleanOp
     uvec4 comps[]; // x=index1, y=index2, z=booleanOp, w=unused
 };
 
-layout(std430, binding = 5) readonly buffer RelSignSSBO {
+layout(std430, binding = 2) readonly buffer RelSignSSBO {
     uint relSigns[]; // relation sign per function
 };
 
-layout(std430, binding = 6) readonly buffer ColorsSSBO {
+layout(std430, binding = 3) readonly buffer ColorsSSBO {
     uvec4 colors[]; // RGBA per function
 };
 
