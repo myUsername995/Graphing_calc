@@ -1,6 +1,6 @@
 ## USER MANUAL:
 - **Inequalities:** <, <=, >, >=
-- **Comparisons:** or (||), and (&&), xor (^), set difference (\ or \\)
+- **Comparisons:** or (||), and (&&), xor (^), set difference (\)
 
 ---
 
@@ -20,16 +20,14 @@ will appear below.
 - **comp:** comp (name1) (comparator) (name2) -> comp a || b
 - **var:** var (name) = (expression) -> var a = b^2 * 2 + 5
 - **func:** func (name): (equation) -> func a: y = x
----
-- You cannot compare more than 2 functions at once
 - **Usable operations:**
 - binary (two arguements): +; -; *; /; ^; % (mod);
 - unary (single arguement): abs(); ln(); log(); sqrt(); sin(); cos(); tan(); asin(); acos(); atan(); floor();
----
 - **Constants you can use:** 
 - e (2.7182818)
 - pi (3.141592)
----
+
+- You cannot compare more than 2 functions at once
 - The expressions can be essentially in any form. Here are some examples:
 - "y = x", "y - x = 0", "x = 5", "y = 5", "0 = 1", "a + b + c + d = 0"
 - -> for the last one, you need to set the variables, like: var a = 5, var b = 2, etc...
