@@ -14,13 +14,13 @@ SRC = grapher.cpp \
       glad/glad.c
 
 # Include directories
-INCLUDES = -I"C:/Users/user/OneDrive/Desktop/gameszko/include" \
+INCLUDES = -I"./include" \
            -I"./libraries/header" \
            -I"."
 
 
 # Library dirs and libs
-LIBS = -L"C:/Users/user/OneDrive/Desktop/gameszko/lib" \
+LIBS = -L"./lib" \
        -lSDL3 -lSDL3_ttf
 
 $(TARGET): $(SRC)
