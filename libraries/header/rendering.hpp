@@ -5,7 +5,7 @@
 struct Comparison {
     uint32_t index1;
     uint32_t index2;
-    uint32_t booleanOp; // BoolOp
+    uint32_t booleanOp;
     uint32_t padding;
 };
 

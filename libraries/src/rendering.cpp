@@ -2,18 +2,16 @@
 A library to graph functions using compute shaders on the GPU.
 
 There are 3 main functions, with the other ones are helper functions:
--packExpressionsToGPU() -> takes a std::vector<> of Expr structs, which store expressions in a stack (array), and converts it into 
-an array of GPUInstructions that gets uploaded to the GPU later
+
+-appendEvaluationFunction() -> Takes an array of expression as input, converts them to GLSL code, and puts them into the 
+evaluation.comp.glsl file. You must recompile the file if you want to see any changes after calling this.
 
 -createBuffersAndUpload() -> creates buffers for the compute shader and uploads them. 
-0: array of whole expressions, essentially all the expressions the user inputted. 
-1: The offsets between the different expressions in the 1st array. 
-2: The lengths of each expression in the 1st array. 
-3: A 3D array of 2D arrays that stores every corner on the screen, each corner can be negative, zero or positive. 
-4: Comparisons array used to compare between functions. Every element has three attributes: index1, index2, boolean operator 
+0: An array of 2D arrays that stores every corner on the screen, each corner can be negative, zero or positive. 
+1: Comparisons array used to compare between functions. Every element has three attributes: index1, index2, boolean operator 
 (between the first 2 functions). 
-5: Relation signs array, used to store all the relation signs for each function. 
-6: Colors array, used to store the colors of each function
+2: Relation signs array, used to store all the relation signs for each function. 
+3: Colors array, used to store the colors of each function
 
 -runCompute() -> runs the evaluate and combine shader. The evaluate shader assigns values for every function's gridSigns array, 
 so that you get what each function looks like individually. This is where the expressions are evaluated. 
@@ -33,9 +31,6 @@ The combine shader looks at all the comparisons, and then renders the resulting 
 
 static int W, H, CORNER_W, CORNER_H;
 GLuint screenShader;
-
-// Mirror these enums on the GLSL side!
-enum InstrKind : uint32_t { EXPR_NUMBER = 0, EXPR_BINARY = 1, EXPR_VAR = 2, EXPR_UNARY = 3 };
 
 // relation signs for comparisons (per function)
 enum RelSign : uint32_t { REL_EQ=0, REL_LT=1, REL_LTE=2, REL_GT=3, REL_GTE=4 };
@@ -254,7 +249,7 @@ void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
         colorComponents.push_back((uint32_t)c.a);
     }
 
-    // Grid signs SSBO (binding = 3) — zero-initialized
+    // Grid signs SSBO (binding = 0) — zero-initialized
     if (ssboGridSigns) { glDeleteBuffers(1, &ssboGridSigns); ssboGridSigns = 0; }
     size_t totalCorners = funcCount * CORNER_W * CORNER_H;
     std::vector<uint32_t> zeroGrid(totalCorners ? totalCorners : 1, 0u);
@@ -263,7 +258,7 @@ void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
     glBufferData(GL_SHADER_STORAGE_BUFFER, zeroGrid.size() * sizeof(uint32_t), zeroGrid.data(), GL_DYNAMIC_COPY);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboGridSigns);
 
-    // Comparisons SSBO (binding = 4)
+    // Comparisons SSBO (binding = 1)
     if (ssboComparisons) { glDeleteBuffers(1, &ssboComparisons); ssboComparisons = 0; }
     glGenBuffers(1, &ssboComparisons);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboComparisons);
@@ -273,7 +268,7 @@ void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
         glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboComparisons);
 
-    // Relation signs SSBO (binding = 5)
+    // Relation signs SSBO (binding = 2)
     if (ssboRelationSigns) { glDeleteBuffers(1, &ssboRelationSigns); ssboRelationSigns = 0; }
     glGenBuffers(1, &ssboRelationSigns);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboRelationSigns);
@@ -283,7 +278,7 @@ void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
         glBufferData(GL_SHADER_STORAGE_BUFFER, 1, nullptr, GL_STATIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboRelationSigns);
 
-    // Colors SSBO (binding = 6) — now 4 uints per color (r,g,b,a) so GLSL's uvec4 colors[] lines up
+    // Colors SSBO (binding = 3) — now 4 uints per color (r,g,b,a) so GLSL's uvec4 colors[] lines up
     if (ssboColors) { glDeleteBuffers(1, &ssboColors); ssboColors = 0; }
     glGenBuffers(1, &ssboColors);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboColors);

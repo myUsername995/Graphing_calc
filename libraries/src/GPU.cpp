@@ -1,4 +1,18 @@
-// --- includes ---
+/*
+HOW TO USE THIS LIBRARY:
+The functions that this library provides are used to make working with the GPU much easier. Here they are:
+-LoadFile() -> loads a file based on the file path
+-CompileShader() -> compiles a shader (fragment or vertex)
+-CreateProgram() -> creates a shader program from a vertex and fragment shader
+-CreateComputeProgram() -> creates a shader program from a computeshader
+
+-renderLine() -> renders a line
+-renderRect() -> renders a rectangle
+-renderText() -> renders text
+
+-initalizeGPU() -> creates all the GPU arrays and other things
+
+*/
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <vector>

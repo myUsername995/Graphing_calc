@@ -84,3 +84,5 @@ void setToVariable(const std::string& variable);
 bool isConstant(const std::string& variable);
 
 void resetVariables();
+
+void printErrors();

@@ -19,8 +19,8 @@ There are 3 different expressions you can input: -comp, -var, -func
 
 How your expressions should look like:
 -comp: comp (name1) (comparator) (name2) -> comp a || b
--var: var (name) = (value) -> var a = 5
--func: func (name) = (expression) -> func a = y = x
+-var: var (name) = (expression) -> var a = b^2 * 2 + 5
+-func: func (name): (equation) -> func a: y = x
 
 -You cannot compare more than 2 functions at once
 -For the type of functions you can input, look at expression.cpp. Documentation is at the top.
@@ -31,26 +31,34 @@ How your expressions should look like:
 func a = y = x,  func b = y = -x, comp a || b
 
 DOCUMENTATION:
-How the renderer works: it takes your input, eg.: y <= x, and then it transform that into the string (y - x) and compiles that 
-as an expression, using the expression.hpp library I made. It does this for every string inside functionStrs, and puts it into the 
-array functions. The renderer goes through every function, and then for each pixel it applies that function, and checks if the result 
-is either negative or positive (0 counts as negative). This is used to ensure the line is drawn visually well instead of just being a 
-bunch of points. It then goes through all the elements in the comparisons array, and compares two functions at a time individually per 
-pixel. It handles boundaries separately from shading, by only colouring the boundary points if theyre next to a shaded part of the 
-two compared functions. The boundaries can be either dashed or solid, solid is easy to draw, just draw every pixel where the four 
-corners are not the same sign. For the dashed line, you still draw it the same way, but you periodically dont draw the line 
-where you should draw it. Actually, the program goes through plots the function from left-right and top-down, and when it sees a boundary 
-point, it decrements a variable "dashLength1" by 1 (that starts at the desired dash lenghts), but if there are multiple intersections with 
-the function in the same row, it only decrements the variable by 1 / numHorizontalIntersections (essentially treating the function at each 
-collision point as a separate dash, which works most of the time). Once it goes below zero, the program will switch the drawing mode, 
-and also reset the dashLength variable. By the way, dashed lines mean strict inequality (<, >), while solid lines are the opposite (>=, <=)
+The renderer renders functions in 3 steps: 
+1st: parsing user input
+2nd: evaluating functions
+3rd: combining functions
 
-Miscellanous facts:
-The rest of the things inside this project I won't explain, such as the way the axis are rendered or how I implemented the moving 
-around and zooming, because I've just copied that from the old graphing project, lol. I still understand it tho, and hopefully 
-when you're reading this you still understand it. If not, go watch a video on it or something.
+I'm going to explain each step in detail here:
+1st step
+This step happens everytime the user updates their expressions. The parsing happens inside of updateExprs(), where the three different 
+types of inputs are all handled. 
+-The "var" kind is parsed by first finding the variable name, then parsing and evaluating the function 
+expression. Note that variables must be declared BEFORE they're used. 
+-The "comp" kind is parsed by collecting all the names and comparators into an array, and after every functions is parsed, only then 
+does it compare them, so that every function can get evaluted before they're combined. You can put this expression anywhere and it will 
+work.
+-The "func" kind is parsed by also collecting every function name and expression into an array, and it only starts going through all 
+the functions once the variables have all been parsed. Every elements gets passed to a function called getFunction(), which converts the 
+relationship the user inputted (e.g: y = x) to an actual equation (e.g: y - x). These are then evaluted.
 
-Besides the way the numbers are plotted on the axis is a mystery to me, I just copied it from the old project.
+After all of these inputs have been parsed, theyre passed to the GPU using the createBuffersAndUpload() function.
+
+2nd step
+This steps happens on every frame (because the user can move the camera around at any time). The expressions are converted into GPU 
+code, and then passed into the compute shader. After this the compute shader gets recompiled.
+
+3rd step
+This step also happens on every frame, inside the runCompute() function. It's just a compute shader that compares each function per pixel, 
+and colors each pixel accordingly. Boundaries are handled specially, because they should only be drawn if theyre next to a shaded 
+pixel (otherwise when comparing 2 functions, the result might look silly).
 */
 
 
@@ -255,13 +263,18 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
         if (checkInput(input, "var", 0)){
             int i = 3;
 
+            // Enforce whitespace
+            if (!checkInput(input, " ", i)){
+                continue;
+            }
+
             // Skip white space
             while (i < input.size() && input[i] == ' ') i++;
             if (i >= input.size()) continue;
 
             int varStartIndex = i;
             // Find the end of the variable
-            while (i < input.size() && input[i] != ' ') i++;
+            while (i < input.size() && input[i] != ' ' && input[i] != '=') i++;
             if (i >= input.size()) continue;
             
             std::string var = input.substr(varStartIndex, i - varStartIndex).c_str();
@@ -274,24 +287,9 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             // Skip white space
             while (i < input.size() && input[i] == ' ') i++;
             if (i >= input.size()) continue;
-            int valStartIndex = i;
 
-            // Find the end of the value
-            while (i < input.size() && input[i] != ' ') i++;
-
-            std::string val = input.substr(valStartIndex, i - valStartIndex);
-            double value;
-
-            if (val == "pi"){
-                value = pi;
-            }
-            else if (val == "e"){
-                value = e;
-            }
-            else {
-                bool isValid = stringToDouble(val, value);
-                if (!isValid) continue;
-            }
+            // Treat the right side as an expression
+            double value = eval(parseInput(input.substr(i)));
             
             // Put the variable into the symbol table, and also set it to a constant (it doesnt change during the pixel drawing loop)
             assignValue(var, value);
@@ -301,6 +299,11 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
         else if (checkInput(input, "func", 0)){
             int i = 4;
 
+            // Enforce whitespace
+            if (!checkInput(input, " ", i)){
+                continue;
+            }
+
             // Skip whitespace
             while (i < input.size() && input[i] == ' ') i++;
             if (i >= input.size()) continue;
@@ -308,13 +311,13 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             // Parse the functions name
             int nameStartIndex = i;
 
-            while (i < input.size() && input[i] != ' ') i++;
+            while (i < input.size() && input[i] != ' ' && input[i] != ':') i++;
             if (i >= input.size()) continue;
             int nameEndIndex = i;
             std::string funcName = input.substr(nameStartIndex, nameEndIndex - nameStartIndex);
 
-            // Go until we find the equals sign
-            while (i < input.size() && input[i] != '=') i++;
+            // Go until we find the ':' sign
+            while (i < input.size() && input[i] != ':') i++;
             if (i >= input.size()) continue;
             i++;
 
@@ -330,6 +333,11 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
         else if (checkInput(input, "comp", 0)){
             int i = 4;
 
+            // Enforce whitespace
+            if (!checkInput(input, " ", i)){
+                continue;
+            }
+
             // Skip whitespace
             while (i < input.size() && input[i] == ' ') i++;
             if (i >= input.size()) continue;
@@ -338,7 +346,14 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             int nameStartIndex = i;
 
             // Go to the end
-            while (i < input.size() && input[i] != ' ') i++;
+            while (i < input.size() && 
+                   input[i] != ' ' && 
+                   !checkInput(input, "^", i) && 
+                   !checkInput(input, "||", i) && 
+                   !checkInput(input, "&&", i) && 
+                   !checkInput(input, "\\", i)
+            ) i++;
+
             if (i >= input.size()) continue;
             int nameEndIndex = i;
             std::string name1 = input.substr(nameStartIndex, nameEndIndex - nameStartIndex);
@@ -372,6 +387,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
         }
     }
 
+    // Create the comparisons
     for (int i = 0; i < compareNames.size(); i++){
         int index1 = -1;
         int index2 = -1;
@@ -394,7 +410,6 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
 int main(int argc, char* argv[]){
 
     SDL_Init(SDL_INIT_VIDEO);
-
     TTF_Init();
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -402,24 +417,19 @@ int main(int argc, char* argv[]){
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
     SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
-
     initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT);
-    
     int error = initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT);
     if (error == -1) return 0;
 
     // Used to evaluate the function
     GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
     GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders\\combine.comp.glsl"), GL_COMPUTE_SHADER));
-
     if (shaderEvaluate == -1 || shaderCombine == -1) return 0;
 
     bool leftMouseDown = false;
     bool updateExpressions = true;
-
     double zoom = 1.0 / 20.0;
     double fps = 1000;
-
     bool run = true;
     SDL_Event event;
 
@@ -427,19 +437,15 @@ int main(int argc, char* argv[]){
     SDL_FPoint top_left;
     top_left.x = 0 - zoom * (WINDOW_WIDTH / 2);
     top_left.y = 0 - zoom * (WINDOW_HEIGHT / 2);
-
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"func a = y < x", "func b = y > x^2", "comp a && b"};
-    
+    std::vector<std::string> userInput = {"func a: y < x", "func b: y > x^2", "comp a && b"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
-
     if (uiSize > 0) letterTrack = userInput[uiTrack].size();
 
     std::vector<compare> comparisons;
     std::vector<Function> functions;
-
     #define Grid std::vector<std::vector<States>>
 
     // An arbitrary upper limit for the number of functions you can input
@@ -463,17 +469,13 @@ int main(int argc, char* argv[]){
 
     double curWorldWidth = WINDOW_WIDTH;
     double curWorldHeight = WINDOW_HEIGHT;
-
     double gridWidth = WINDOW_WIDTH / 20.0;
     double gridHeight = WINDOW_HEIGHT / 20.0;
-
     double FPS;
 
     TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
-
     std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
     std::vector<SDL_Color> funcColors;
-
     SDL_StartTextInput(window);
 
     while (run){

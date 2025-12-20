@@ -1,18 +1,29 @@
 /*
 HOW TO USE: 
--parseInput: pass the string into this function, and it will return an expression that is easy to evaluate by the computer
--eval: Evaluates an expression. For this to work the expression has to be already compiled. Additionally you can pass variables 
-using the assignVariables() function before you call eval(), and it will evaluate the function with those values.
--assignValue: A function to assign a value to some variable. Note that each variable must be only 1 character long.
--resetVariables: sets every slot in the variables table to 0 (essentially resetting every variable)
+-Expression parseInput(str): pass the string into this function, and it will return an expression that can be evaluated
+-double eval(Expression): Evaluates an expression. For this to work the expression has to be already compiled. 
+Additionally you can pass variables using the assignVariables() function before you call eval(), and it will evaluate the function 
+with those values.
 
 Usable operations:
-binary (two arguements): +; -; *; /; ^; %;
-unary (single arguement): abs(); ln(); log(); sqrt(); sin(); cos(); tan(); asin(); acos(); atan(); floor;
+binary (two arguements): +; -; *; /; ^; % (mod);
+unary (single arguement): abs(); ln(); log(); sqrt(); sin(); cos(); tan(); asin(); acos(); atan(); floor();
 
 Constants (provided by this library): 
 -e (2.7182818)
 -pi (3.141592)
+
+Helpful functions:
+-void assignValue(variable, value) -> assigns a value to a variable
+-double getValue(variable) -> returns the value of a variable
+
+-bool isConstant(variable) -> returns whether a variable is constant or not
+-void setToConstant(variable) -> sets a variable to constant (once you compile your input it can't change)
+-void setToVariable(variable) -> sets a variable to be variable
+
+-void resetVariables() -> clears the hashtable, essentially resetting every variables value to 0
+
+-void printErrors() -> prints the errors (if any) from the last compiled input
 
 HOW IT WORKS: 
 It uses Pratt parsing to evaluate the function at first and it creates a tree. After that, I convert this tree to a postfix notation, 
@@ -21,16 +32,14 @@ library like 3 months ago, and now that I'm updating it to make it work better, 
 used the shunting-yard algorithm, but this is how it turned out. It might be a little slower, but you only need to compile a string 
 once, so I wasn't really concerned with optimising the compilation.
 
-For the variables, it uses an array instead of a hashtable, but it still works like a hashtable. You have to index into this array 
-using the variable name itself, eg. vars['a'] to get back the actual variables value. This is much faster than a hashtable, and 256 
-slots can store all of the English Alphabets characters.
+For the variables, it just uses a hashtable. It also keeps a hashtable of the constant variables.
 
 It also can fold constants, but only for simple cases, where the two constants appear right beside eachother on the stack. Constant 
 variables are folded by looking up the current value of the variable in the hashtable, which should have been set before it was made into 
 a constant variable, althought my parser doesn't really check if the variable really is constant. 
 
-The cases where it can fold constants: x * (2 + 3) -> x * 5; 2 * 3 + 4 -> 10; a^2 + x (where const a = 5) -> 25 + x
-The cases where it can't fold them: 2 * x * 4; x - 2 + 4; a - x + 2 (where const a = 5)
+The cases where it can fold constants: x * (2 + 3) -> x * 5; 2 * 3 + 4 -> 10; a^2 + x (where const a = 5 for example) -> 25 + x
+The cases where it can't fold them: 2 * x * 4; x - 2 + 4; a - x + 2 (where const a = 5 for example)
 
 Why it cant fold them in these cases? Because the expressions are essentially parsed as 2 * (x * 4), and I would need to open up 
 the parenthesis in order to fold the constants, which would require me to implement algebraic manipulation into my parser, which I 
