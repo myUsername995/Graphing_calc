@@ -47,6 +47,46 @@ bool applyRelation(uint rel, bool allEqual, uint cornerValue) {
     return false;
 }
 
+bool colorAtPixel(uint ci, int x, int y){
+    uvec4 cmp = comps[ci];
+    uint idx1 = cmp.x;
+    uint idx2 = cmp.y;
+    uint bOp  = cmp.z;
+
+    // read four corners for each function
+    uint a1 = readGrid(idx1, x,   y);
+    uint b1 = readGrid(idx1, x+1, y);
+    uint c1 = readGrid(idx1, x,   (y+1));
+    uint d1 = readGrid(idx1, x+1, (y+1));
+
+    uint a2 = readGrid(idx2, x,   y);
+    uint b2 = readGrid(idx2, x+1, y);
+    uint c2 = readGrid(idx2, x,   (y+1));
+    uint d2 = readGrid(idx2, x+1, (y+1));
+
+    bool allEqual1 = (a1 == b1) && (a1 == c1) && (a1 == d1);
+    bool allEqual2 = (a2 == b2) && (a2 == c2) && (a2 == d2);
+
+    uint corner1 = a1; // choose a corner value for equal-case tests
+    uint corner2 = a2;
+
+    uint rel1 = relSigns[idx1];
+    uint rel2 = relSigns[idx2];
+
+    bool color1 = applyRelation(rel1, allEqual1, corner1);
+    bool color2 = applyRelation(rel2, allEqual2, corner2);
+
+    bool result = false;
+    if (bOp == 0u) result = color1 && color2;       // AND
+    else if (bOp == 1u) result = color1 || color2;  // OR
+    else if (bOp == 2u) result = color1 && !color2; // DIFF
+    else if (bOp == 3u) result = color1 != color2;   // XOR
+
+    bool isBoundary = !allEqual1 || !allEqual2;
+
+    return result || isBoundary;
+}
+
 void main(){
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
     if (gid.x >= u_res.x || gid.y >= u_res.y) return;
@@ -93,6 +133,16 @@ void main(){
         else if (bOp == 3u) result = color1 != color2;   // XOR
 
         bool isBoundary = !allEqual1 || !allEqual2;
+
+        // Check if we should color any of the neighbouring 4 cells, if yes then colour the boundary too
+        if (isBoundary){
+            bool colorPixel1 = colorAtPixel(ci, x+1, y);
+            bool colorPixel2 = colorAtPixel(ci, x, y+1);
+            bool colorPixel3 = colorAtPixel(ci, x, y-1);
+            bool colorPixel4 = colorAtPixel(ci, x-1, y);
+
+            if (!(colorPixel1 || colorPixel2 || colorPixel3 || colorPixel4)) isBoundary = false;
+        }
 
         // Always colour the boundary + any additional pixels
         if (result || isBoundary){

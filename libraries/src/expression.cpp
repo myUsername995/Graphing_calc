@@ -44,33 +44,80 @@ didn't bother with.
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
+#include <algorithm>
+#include <unordered_map>
 #include "expression.hpp"
 #include "time.hpp"
 
 #define tableSize 256
 // Keep a global hashtable for the variables, and also for constant variables (so that we can fold constants)
-double vars[tableSize] = {0};
-bool constants[tableSize] = {0};
+std::unordered_map<std::string, double> vars;
+std::unordered_map<std::string, bool> constants;
+std::string errors;
 
-static void resize(void** arr, int size, int elements_size){
-    void* new_arr = realloc(*arr, size * elements_size);
+bool expressionValid = true;
 
-    if (!new_arr){
-        printf("malloc failed\n");
-        return;
+// The variable must be a single character long
+void assignValue(const std::string& variable, double value){
+    vars[variable] = value;
+}
+
+// Retrieve a variables value
+double getValue(const std::string& variable){
+    return vars[variable];
+}
+
+// Returns if a variable is constant or not
+bool isConstant(const std::string& variable){
+    return constants[variable];
+}
+
+void setToConstant(const std::string& variable){
+    constants[variable] = true;
+}
+
+void setToVariable(const std::string& variable){
+    constants[variable] = false;
+}
+
+void resetVariables(){
+    vars.clear();
+}
+
+void printOp(Operations op){
+    switch (op) {
+        case OP_NEG:  errors += ("neg"); break;
+        case OP_ABS:  errors += ("abs"); break;
+        case OP_SQRT: errors += ("sqrt"); break;
+        case OP_LN:  errors += ("ln"); break;
+        case OP_LOG:  errors += ("log"); break;
+        case OP_SIN:  errors += ("sin"); break;
+        case OP_COS:  errors += ("cos"); break;
+        case OP_TAN:  errors += ("tan"); break;
+        case OP_ASIN: errors += ("asin"); break;
+        case OP_ACOS: errors += ("acos"); break;
+        case OP_ATAN: errors += ("atan"); break;
+        case OP_FLOOR: errors += ("floor"); break;
+        case OP_ADD: errors += ("+"); break;
+        case OP_SUB: errors += ("-"); break;
+        case OP_MUL: errors += ("*"); break;
+        case OP_DIV: errors += ("/"); break;
+        case OP_POW: errors += ("^"); break;
+        case OP_MOD: errors += ("%"); break;
     }
+}
 
-    *arr = new_arr;
+void freeExpressions(Expr* node) {
+    if (!node) return;
+
+    freeExpressions(node->left);
+    freeExpressions(node->right);
+
+    delete node;
 }
 
 static void removeSpaces(std::string& str) {
-    int i, j = 0;
-    for (i = 0; str[i] != '\0'; i++) {
-        if (str[i] != ' ') {
-            str[j++] = str[i];
-        }
-    }
-    str[j] = '\0';  // Null-terminate the modified string
+    str.erase(std::remove(str.begin(), str.end(), ' '), str.end());
 }
 
 // Check if the input string starting from index has the string str
@@ -98,8 +145,11 @@ static bool checkInput(const char* input, const std::string& str, int index){
     return !str[i];
 }
 
-Token* tokens = NULL;
-int token_count = 0; int token_size = 100;
+bool isLetterVar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+std::vector<Token> tokens;
 int current = 0;
 
 static void tokenize(const char* input){
@@ -107,123 +157,135 @@ static void tokenize(const char* input){
     int i = 0;
     while (input[i]){
         if (isdigit(input[i])){
-            char* end;
-            tokens[token_count].type = TOKEN_NUMBER;
-            tokens[token_count].value = strtod(&input[i], &end);     // Read until there are no other digits
-            i = end - input;                // Step I forward to the next non-digit
-            token_count++;
+            char* end; Token tkn;
+            tkn.type = TOKEN_NUMBER; tkn.value = strtod(&input[i], &end);
 
-            if (token_count >= token_size){
-                token_size *= 2;
-                resize((void**)&tokens, token_size, sizeof(Token));
-            }
+            tokens.push_back(tkn);
+            i = end - input;                // Step I forward to the next non-digit
         }
         else {
+            Token tkn;
             switch (input[i]){
-                case '*': tokens[token_count++].type = TOKEN_STAR; break;
-                case '/': tokens[token_count++].type = TOKEN_SLASH; break;
-                case '+': tokens[token_count++].type = TOKEN_PLUS; break;
-                case '-': tokens[token_count++].type = TOKEN_MINUS; break;
-                case '^': tokens[token_count++].type = TOKEN_ARROW; break;
-                case '%': tokens[token_count++].type = TOKEN_PERCENT; break;
-                case '(': tokens[token_count++].type = TOKEN_LPAREN; break;
-                case ')': tokens[token_count++].type = TOKEN_RPAREN; break;
+                case '*': tkn.type = TOKEN_STAR; i++; break;
+                case '/': tkn.type = TOKEN_SLASH; i++; break;
+                case '+': tkn.type = TOKEN_PLUS; i++; break;
+                case '-': tkn.type = TOKEN_MINUS; i++; break;
+                case '^': tkn.type = TOKEN_ARROW; i++; break;
+                case '%': tkn.type = TOKEN_PERCENT; i++; break;
+                case '(': tkn.type = TOKEN_LPAREN; i++; break;
+                case ')': tkn.type = TOKEN_RPAREN; i++; break;
+                case 'e': tkn.value = e; tkn.type = TOKEN_NUMBER; i++; break;
                 default:
                     // Check for other things
-                    if (checkInput(input, "e", i)){
-                        tokens[token_count].value = e;
-                        tokens[token_count++].type = TOKEN_NUMBER;
-                    }
-                    else if (checkInput(input, "pi", i)){
-                        tokens[token_count].value = pi;
-                        tokens[token_count++].type = TOKEN_NUMBER;
+                    if (checkInput(input, "pi", i)){
+                        tkn.value = pi;
+                        tkn.type = TOKEN_NUMBER;
 
-                        i += 1;
+                        i += 2;
                     }
                     else if (checkInput(input, "abs", i)){
-                        tokens[token_count++].type = TOKEN_ABS;
+                        tkn.type = TOKEN_ABS;
 
-                        i += 2;
+                        i += 3;
                     }
                     else if (checkInput(input, "sqrt", i)){
-                        tokens[token_count++].type = TOKEN_SQRT;
-
-                        i += 3;
-                    }
-                    else if (checkInput(input, "ln", i)){
-                        tokens[token_count++].type = TOKEN_LN;
-
-                        i += 1;
-                    }
-                    else if (checkInput(input, "log", i)){
-                        tokens[token_count++].type = TOKEN_LOG;
-
-                        i += 2;
-                    }
-                    else if (checkInput(input, "sin", i)){
-                        tokens[token_count++].type = TOKEN_SIN;
-
-                        i += 2;
-                    }
-                    else if (checkInput(input, "cos", i)){
-                        tokens[token_count++].type = TOKEN_COS;
-
-                        i += 2;
-                    }
-                    else if (checkInput(input, "tan", i)){
-                        tokens[token_count++].type = TOKEN_TAN;
-
-                        i += 2;
-                    }
-                    else if (checkInput(input, "asin", i)){
-                        tokens[token_count++].type = TOKEN_ASIN;
-
-                        i += 3;
-                    }
-                    else if (checkInput(input, "acos", i)){
-                        tokens[token_count++].type = TOKEN_ACOS;
-
-                        i += 3;
-                    }
-                    else if (checkInput(input, "atan", i)){
-                        tokens[token_count++].type = TOKEN_ATAN;
-
-                        i += 3;
-                    }
-                    else if (checkInput(input, "floor", i)){
-                        tokens[token_count++].type = TOKEN_FLOOR;
+                        tkn.type = TOKEN_SQRT;
 
                         i += 4;
                     }
+                    else if (checkInput(input, "ln", i)){
+                        tkn.type = TOKEN_LN;
+
+                        i += 2;
+                    }
+                    else if (checkInput(input, "log", i)){
+                        tkn.type = TOKEN_LOG;
+
+                        i += 3;
+                    }
+                    else if (checkInput(input, "sin", i)){
+                        tkn.type = TOKEN_SIN;
+
+                        i += 3;
+                    }
+                    else if (checkInput(input, "cos", i)){
+                        tkn.type = TOKEN_COS;
+
+                        i += 3;
+                    }
+                    else if (checkInput(input, "tan", i)){
+                        tkn.type = TOKEN_TAN;
+
+                        i += 3;
+                    }
+                    else if (checkInput(input, "asin", i)){
+                        tkn.type = TOKEN_ASIN;
+
+                        i += 4;
+                    }
+                    else if (checkInput(input, "acos", i)){
+                        tkn.type = TOKEN_ACOS;
+
+                        i += 4;
+                    }
+                    else if (checkInput(input, "atan", i)){
+                        tkn.type = TOKEN_ATAN;
+
+                        i += 4;
+                    }
+                    else if (checkInput(input, "floor", i)){
+                        tkn.type = TOKEN_FLOOR;
+
+                        i += 5;
+                    }
                     else {
-                        // We found a variable, assume its one character
-                        tokens[token_count].type = TOKEN_VAR;
-                        tokens[token_count++].var = input[i];
+                        // We found a variable, go until we the end of the variable
+                        std::string converted(input);
+
+                        int startIndex = i;
+                        while (i < converted.size() && isLetterVar(converted[i])) i++;
+
+                        if (i > startIndex) {  // always positive length
+                            std::string temp = converted.substr(startIndex, i - startIndex);
+                            tkn.type = TOKEN_VAR;
+                            tkn.var = temp;
+                        } else {
+                            // handle empty variable error
+                            expressionValid = false;
+                            errors += "Empty variable at index " + std::to_string(startIndex) + "\n";
+                            return;
+                        }
                     }
             }
 
-            if (token_count >= token_size){
-                token_size *= 2;
-                resize((void**)&tokens, token_size, sizeof(Token));
-            }
-
-            i++;
+            tokens.push_back(tkn);
         }
     }
 
-    tokens[token_count++].type = TOKEN_END;
+    Token endTkn;
+    endTkn.type = TOKEN_END;
 
-    if (token_count >= token_size){
-        token_size *= 2;
-        resize((void**)&tokens, token_size, sizeof(Token));
-    }
+    tokens.push_back(endTkn);
 }
 
 static Token peek(){
+    if (current >= tokens.size()) {
+        expressionValid = false;
+        errors += "Index exceeded the size of the tokens array while peeking.\n";
+        Token t; t.type = TOKEN_INVALID;
+        return t;
+    }
     return tokens[current];
 }
 
 static Token advance(){
+    if (current >= tokens.size()) {
+        expressionValid = false;
+        errors += "Index exceeded the size of the tokens array while advancing.\n";
+        Token t; t.type = TOKEN_INVALID;
+        return t;
+    }
+
     return tokens[current++];
 }
 
@@ -234,31 +296,39 @@ static Expr* parse_binary(int min_pre);
 
 static Expr* parseFunction(Operations operation){
     // Parse the equation inside the parenthesis
-
     if (advance().type != TOKEN_LPAREN){
-        //printf("Expected a parenthesis after function\n");
+        expressionValid = false;
+        errors += ("Expected a parenthesis after function" + std::to_string(current) + '\n');
         return NULL;
     }
 
     Expr* rhs = parse_binary(1);
 
     if (advance().type != TOKEN_RPAREN){
-        //printf("Expected closing parenthesis!\n");
+        expressionValid = false;
+        errors += ("Expected closing parenthesis! Index: " + std::to_string(current) + '\n');
+        freeExpressions(rhs);
         return NULL;
     }
-    if (!rhs) return NULL;
 
-    Expr* node = (Expr*)malloc(sizeof(Expr));
+    if (!rhs){
+        errors += "Invalid expression after the unary operator '";
+        printOp(operation);
+        errors += "'.\n";
+        return NULL;
+    }
+
+    Expr* node = new Expr();
     node->kind = Expr::EXPR_UNARY;
-    node->unary.op = operation;
-    node->unary.rhs = rhs;
+    node->op = operation;
+    node->right = rhs;
     return node;
 }
 
 static Expr* parse_primary() {
     Token tok = advance();
     if (tok.type == TOKEN_NUMBER){
-        Expr* expr = (Expr*)malloc(sizeof(Expr));
+        Expr* expr = new Expr();
         expr->kind = Expr::EXPR_NUMBER;
         expr->number = tok.value;
         return expr;
@@ -266,12 +336,15 @@ static Expr* parse_primary() {
     else if (tok.type == TOKEN_MINUS) {
         // Parse operand with higher binding power than * or +
         Expr* rhs = parse_binary(3);
-        if (!rhs) return NULL;
+        if (!rhs){
+            errors += "Invalid expression after '-' sign.\n";
+            return NULL;
+        }
 
-        Expr* node = (Expr*)malloc(sizeof(Expr));
+        Expr* node = new Expr();
         node->kind = Expr::EXPR_UNARY;
-        node->unary.op = OP_NEG;
-        node->unary.rhs = rhs;
+        node->op = OP_NEG;
+        node->right = rhs;
         return node;
     }
     else if (tok.type == TOKEN_SQRT){
@@ -311,22 +384,27 @@ static Expr* parse_primary() {
         Expr* expr = parse_expression();
 
         if (!expr){
+            errors += "Invalid expression inside the parenthesis.\n";
+            expressionValid = false;
             return NULL;
         }
         if (advance().type != TOKEN_RPAREN) {
-            //printf("Expected closing parenthesis\n");
+            expressionValid = false;
+            errors += ("Expected closing parenthesis! Index: " + std::to_string(current) + '\n');
+            freeExpressions(expr);
             return NULL;
         }
         return expr;
     }
     else if (tok.type == TOKEN_VAR){
-        Expr* expr = (Expr*)malloc(sizeof(Expr));
+        Expr* expr = new Expr();
         expr->kind = Expr::EXPR_VAR;
         expr->var = tok.var;
         return expr;
     }
     else {
-        //printf("Unexpected token in primary\n");
+        expressionValid = false;
+        errors += ("Unexpected token in primary! Index: " + std::to_string(current) + '\n');
         return NULL;
     }
 }
@@ -339,6 +417,7 @@ static int get_precedence(TokenType type) {
         case TOKEN_STAR:
         case TOKEN_SLASH: return 2;
         case TOKEN_ARROW: return 3;
+        case TOKEN_END: return 0;           // Make sure the function exits when it reaches the end of the tokens
         default: return 0;
     }
 }
@@ -347,6 +426,8 @@ static Expr* parse_binary(int min_prec) {
     Expr* left = parse_primary();
 
     if (!left){
+        errors += "Invalid expression in primary.\n";
+        expressionValid = false;
         return NULL;
     }
 
@@ -359,19 +440,28 @@ static Expr* parse_binary(int min_prec) {
         Expr* right = parse_binary(prec + 1);
 
         if (!right){
+            expressionValid = false;
+            errors += "Couldn't parse the right side of the equation.\n";
+            freeExpressions(left);
             return NULL;
         }
 
-        Expr* new_expr = (Expr*)malloc(sizeof(Expr));
+        if (!expressionValid){
+            freeExpressions(left);
+            freeExpressions(right);
+            return NULL;
+        }
+
+        Expr* new_expr = new Expr();
         new_expr->kind = Expr::EXPR_BINARY;
-        new_expr->binary.op = (op_type == TOKEN_PLUS) ? OP_ADD:
-                              (op_type == TOKEN_MINUS) ? OP_SUB:
-                              (op_type == TOKEN_STAR) ? OP_MUL:
-                              (op_type == TOKEN_SLASH) ? OP_DIV: 
-                              (op_type == TOKEN_ARROW) ? OP_POW : OP_MOD;
+        new_expr->op = (op_type == TOKEN_PLUS) ? OP_ADD:
+                       (op_type == TOKEN_MINUS) ? OP_SUB:
+                       (op_type == TOKEN_STAR) ? OP_MUL:
+                       (op_type == TOKEN_SLASH) ? OP_DIV: 
+                       (op_type == TOKEN_ARROW) ? OP_POW : OP_MOD;
                               
-        new_expr->binary.left = left;
-        new_expr->binary.right = right;
+        new_expr->left = left;
+        new_expr->right = right;
         left = new_expr;
     }
 
@@ -381,73 +471,6 @@ static Expr* parse_binary(int min_prec) {
 static Expr* parse_expression() {
     return parse_binary(1);
 }
-
-void printOp(Operations op){
-    switch (op) {
-        case OP_NEG:  std::cout << "neg"; break;
-        case OP_ABS:  std::cout << "abs"; break;
-        case OP_SQRT: std::cout << "sqrt"; break;
-        case OP_LN:   std::cout << "ln"; break;
-        case OP_LOG:  std::cout << "log"; break;
-        case OP_SIN:  std::cout << "sin"; break;
-        case OP_COS:  std::cout << "cos"; break;
-        case OP_TAN:  std::cout << "tan"; break;
-        case OP_ASIN: std::cout << "asin"; break;
-        case OP_ACOS: std::cout << "acos"; break;
-        case OP_ATAN: std::cout << "atan"; break;
-        case OP_FLOOR: std::cout << "floor"; break;
-        case OP_ADD: std::cout << "+"; break;
-        case OP_SUB: std::cout << "-"; break;
-        case OP_MUL: std::cout << "*"; break;
-        case OP_DIV: std::cout << "/"; break;
-        case OP_POW: std::cout << "^"; break;
-        case OP_MOD: std::cout << "%"; break;
-    }
-}
-
-// Hashtable needs to contain the variable - value pairs
-// double eval(Expr* expr){
-//     if (expr->kind == Expr::EXPR_NUMBER) {
-//         return expr->number;
-//     } 
-//     else if (expr->kind == Expr::EXPR_VAR){
-//         return vars[(unsigned char)expr->var];
-//     }
-//     else if (expr->kind == Expr::EXPR_UNARY){
-//         double value = eval(expr->unary.rhs);
-
-//         switch (expr->unary.op) {
-//             case OP_NEG:  return -value;
-//             case OP_ABS:  return fabs(value);
-//             case OP_SQRT: return sqrt(value);
-//             case OP_LN:   return log(value);
-//             case OP_LOG:  return log10(value);
-//             case OP_SIN:  return sin(value);
-//             case OP_COS:  return cos(value);
-//             case OP_TAN:  return tan(value);
-//             case OP_ASIN: return asin(value);
-//             case OP_ACOS: return acos(value);
-//             case OP_ATAN: return atan(value);
-//             case OP_FAC:  return tgamma(value + 1);
-//         }
-//     }
-//     else {
-//         double left = eval(expr->binary.left);
-//         double right = eval(expr->binary.right);
-//         switch (expr->binary.op) {
-//             case OP_ADD: return left + right;
-//             case OP_SUB: return left - right;
-//             case OP_MUL: return left * right;
-//             case OP_DIV: return left / right;
-//             case OP_POW: return pow(left, right);
-//             default:
-//                 //printf("Unknown operator\n");
-//                 return 0;
-//         }
-//     }
-
-//     return 0;
-// }
 
 double eval(const Expression& exprStack) {
     // Preallocated small fixed-size stack
@@ -461,7 +484,7 @@ double eval(const Expression& exprStack) {
                 break;
 
             case Stack::EXPR_VAR:
-                stack[sp++] = vars[(unsigned char)elem.var];
+                stack[sp++] = vars[elem.var];
                 break;
 
             case Stack::EXPR_UNARY: {
@@ -530,29 +553,29 @@ void treeToPostfix(Expr* expression, Expression& exprStack){
         exprStack.push_back(elem);
     }
     else if (expression->kind == Expr::EXPR_UNARY){
-        treeToPostfix(expression->unary.rhs, exprStack);
+        treeToPostfix(expression->right, exprStack);
 
         Stack elem;
         elem.kind = Stack::EXPR_UNARY;
-        elem.op = expression->unary.op;
+        elem.op = expression->op;
 
         exprStack.push_back(elem);
     }
     else if (expression->kind == Expr::EXPR_BINARY){
-        treeToPostfix(expression->binary.left, exprStack);
-        treeToPostfix(expression->binary.right, exprStack);
+        treeToPostfix(expression->left, exprStack);
+        treeToPostfix(expression->right, exprStack);
 
         Stack elem;
         elem.kind = Stack::EXPR_BINARY;
-        elem.op = expression->binary.op;
+        elem.op = expression->op;
 
         exprStack.push_back(elem);
     }
 }
 
 void foldConstants(Expression& exprStack){
-    Expression stack;
-    stack.resize(100);
+    Expression stack; int size = 100;
+    stack.resize(size);
     int sp = 0;
 
     // Traverse the stack, and for each op we see, if the top 2 (or 1) elements of the stack are constants, fold them
@@ -560,6 +583,10 @@ void foldConstants(Expression& exprStack){
         switch (elem.kind){
             case Stack::EXPR_NUMBER: {
                 stack[sp++] = elem;
+
+                if (sp >= size){
+                    size *= 2; stack.resize(size);
+                }
                 break;
             }
             case Stack::EXPR_VAR: {
@@ -577,6 +604,9 @@ void foldConstants(Expression& exprStack){
                 newElem.op = (Operations)0;
 
                 stack[sp++] = newElem;
+                if (sp >= size){
+                    size *= 2; stack.resize(size);
+                }
                 break;
             }
             case Stack::EXPR_UNARY: {
@@ -601,6 +631,9 @@ void foldConstants(Expression& exprStack){
                 // Otherwise just add the operator to the end of the stack
                 else {
                     stack[sp++] = elem;
+                    if (sp >= size){
+                    size *= 2; stack.resize(size);
+                }
                 }
                 break;
             }
@@ -635,6 +668,9 @@ void foldConstants(Expression& exprStack){
                 // Just add the operation
                 else {
                     stack[sp++] = elem;
+                    if (sp >= size){
+                        size *= 2; stack.resize(size);
+                    }
                 }
                 break;
             }
@@ -642,17 +678,28 @@ void foldConstants(Expression& exprStack){
     }
 
     stack.resize(sp);
+
     exprStack = stack;
 }
 
-Expression parseInput(std::string input){
-    token_count = 0;
-    token_size = 100;
-    current = 0;
-    tokens = (Token*)malloc(100 * sizeof(Token));
+void printErrors(){
+    if (errors.empty()) return;
 
-    // Get rid of the new line
-    input[strcspn(input.c_str(), "\n")] = '\0';
+    std::cout << errors << std::endl;
+}
+
+Expression parseInput(std::string input){
+    expressionValid = true;
+    errors.clear();
+    
+    current = 0;
+    tokens.clear();
+
+    // Get rid of the newline
+    size_t pos = input.find('\n');
+    if (pos != std::string::npos) {
+        input.erase(pos);
+    }
 
     removeSpaces(input);
 
@@ -661,44 +708,35 @@ Expression parseInput(std::string input){
 
     Expr* expression = parse_expression();
 
+    if (!expressionValid){
+        freeExpressions(expression);
+        errors += ("Expression couldn't be parsed\n");
+        printErrors();
+        return {};
+    }
+
     // Convert to postfix notation because its faster
     Expression exprStack;
     treeToPostfix(expression, exprStack);
+
+    // Free the expressions structure
+    freeExpressions(expression);
 
     // Fold constants
     foldConstants(exprStack);
 
     // Print the postfix notation for visuals
     for (auto elem : exprStack){
-        if (elem.kind == Stack::EXPR_NUMBER) std::cout << elem.number;
-        if (elem.kind == Stack::EXPR_VAR) std::cout << elem.var;
+        if (elem.kind == Stack::EXPR_NUMBER) errors += (std::to_string(elem.number));
+        if (elem.kind == Stack::EXPR_VAR) errors += (elem.var);
         if (elem.kind == Stack::EXPR_UNARY) printOp(elem.op);
         if (elem.kind == Stack::EXPR_BINARY) printOp(elem.op);
 
-        std::cout << " ";
+        errors += (" ");
     }
-    std::cout << "\n";
+    errors += ("\n");
 
-    free(tokens);
+    printErrors();
     
     return exprStack;
-}
-
-// The variable must be a single character long
-void assignValue(unsigned char variable, double value){
-    vars[variable] = value;
-}
-
-void setToConstant(unsigned char variable){
-    constants[variable] = true;
-}
-
-void setToVariable(unsigned char variable){
-    constants[variable] = false;
-}
-
-void resetVariables(){
-    for (int i = 0; i < tableSize; i++){
-        vars[i] = 0;
-    }
 }

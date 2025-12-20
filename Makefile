@@ -1,6 +1,6 @@
 # Compiler
 CXX = g++
-CXXFLAGS = -O3 -g
+CXXFLAGS = -O0 -g
 
 # Output name
 TARGET = grapher.exe

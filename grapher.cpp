@@ -146,34 +146,6 @@ SDL_FPoint getScreenPos(TTF_Font* font, const std::string& str, int index, SDL_F
     return pos;
 }
 
-void setPixel(void *pixels, int pitch, int x, int y,
-              Uint8 sr, Uint8 sg, Uint8 sb, Uint8 sa){
-    if (!pixels || x < 0 || y < 0) return;
-
-    Uint32 *p = (Uint32*)((Uint8*)pixels + y * pitch);
-
-    // Read existing destination pixel
-    Uint32 dst = p[x];
-
-    Uint8 dr = (dst >> 24) & 0xFF;
-    Uint8 dg = (dst >> 16) & 0xFF;
-    Uint8 db = (dst >>  8) & 0xFF;
-    Uint8 da =  dst        & 0xFF;
-
-    // Convert alpha to 0–1 range
-    float a  = sa / 255.0f;
-    float ia = 1.0f - a;
-
-    // Source-over alpha compositing (same as SDL_BLENDMODE_BLEND)
-    Uint8 rr = (Uint8)(sr * a + dr * ia);
-    Uint8 rg = (Uint8)(sg * a + dg * ia);
-    Uint8 rb = (Uint8)(sb * a + db * ia);
-    Uint8 ra = (Uint8)(sa * a + da * ia); // matches SDL's alpha behavior
-
-    // Store back to RGBA8888
-    p[x] = (rr << 24) | (rg << 16) | (rb << 8) | ra;
-}
-
 bool onlySpaces(const std::string& str) {
     for (const auto& letter : str){
         if (letter != ' ') return false;
@@ -199,14 +171,16 @@ bool stringToDouble(const std::string& str, double& outValue) {
     }
 }
 
+// Converts strings into "Function" structs and also handles invalid strings
+// Assumes that only strings that already refer to functions are passed in
 std::vector<Function> getFunctions(std::vector<std::string> strs){
-    std::vector<Function> functions(strs.size());
-
-    bool foundRelationSign = false;
+    std::vector<Function> functions;
 
     // Transform the string into the string that will be calculated (eg. "y = x" -> "y - x")
     for (int idx = 0; idx < strs.size(); idx++){
         std::string str = strs[idx];
+        Function func;
+        bool foundRelationSign = false;
 
         int index = 0;
         int length = 0;
@@ -214,34 +188,33 @@ std::vector<Function> getFunctions(std::vector<std::string> strs){
         // Find the separating relation sign
         for (int i = 0; i < str.size() - 1; i++){
             if (str[i] == '<' && str[i+1] == '='){
-                index = i; length = 2; functions[idx].relationSign = LTE;
+                index = i; length = 2; func.relationSign = LTE;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '>' && str[i+1] == '='){
-                index = i; length = 2; functions[idx].relationSign = GTE;
+                index = i; length = 2; func.relationSign = GTE;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '='){
-                index = i; length = 1; functions[idx].relationSign = EQ;
+                index = i; length = 1; func.relationSign = EQ;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '<'){
-                index = i; length = 1; functions[idx].relationSign = LT;
+                index = i; length = 1; func.relationSign = LT;
                 foundRelationSign = true;
                 break;
             }
             else if (str[i] == '>'){
-                index = i; length = 1; functions[idx].relationSign = GT;
+                index = i; length = 1; func.relationSign = GT;
                 foundRelationSign = true;
                 break;
             }
         }
 
         if (!foundRelationSign){
-            functions.erase(functions.begin() + idx);
             break;
         }
 
@@ -250,11 +223,13 @@ std::vector<Function> getFunctions(std::vector<std::string> strs){
         std::string half2 = str.substr(index + length);
 
         if (onlySpaces(half2)){
-            functions.erase(functions.begin() + idx);
             break;
         }
 
-        functions[idx].expr = parseInput("(" + half1 + ") - (" + half2 + ")");
+        func.expr = parseInput("(" + half1 + ") - (" + half2 + ")");
+        if (func.expr.empty()) continue;
+
+        functions.push_back(func);
     }
 
     return functions;
@@ -284,7 +259,12 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             while (i < input.size() && input[i] == ' ') i++;
             if (i >= input.size()) continue;
 
-            unsigned char var = input[i];
+            int varStartIndex = i;
+            // Find the end of the variable
+            while (i < input.size() && input[i] != ' ') i++;
+            if (i >= input.size()) continue;
+            
+            std::string var = input.substr(varStartIndex, i - varStartIndex).c_str();
 
             // Find the equals sign
             while (i < input.size() && input[i] != '=') i++;
@@ -312,7 +292,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
                 bool isValid = stringToDouble(val, value);
                 if (!isValid) continue;
             }
-
+            
             // Put the variable into the symbol table, and also set it to a constant (it doesnt change during the pixel drawing loop)
             assignValue(var, value);
             setToConstant(var);
@@ -344,7 +324,6 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
 
             funcNames.push_back(funcName);
 
-            // Parse the actual function
             std::string expr = input.substr(i);
             exprs.push_back(expr);
         }
@@ -452,7 +431,15 @@ int main(int argc, char* argv[]){
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"func a = x < y", "comp a || a"};
+    std::vector<std::string> userInput = {"var a = 5", "var b = 10", "var c = 10", 
+                                          "func a = y^2 / a^2 + x^2 / b^2 < c", "func b = y^2 / a^2 + x^2 / b^2 < c-1",
+                                          "func c = y^2 / a^2 + x^2 / b^2 < c-2", "func d = y^2 / a^2 + x^2 / b^2 < c-3",
+                                          "func e = y^2 / a^2 + x^2 / b^2 < c-4", "func f = y^2 / a^2 + x^2 / b^2 < c-5",
+                                          "func g = y^2 / a^2 + x^2 / b^2 < c-6", "func h = y^2 / a^2 + x^2 / b^2 < c-7",
+                                          
+                                          "comp a || a", "comp b || b", "comp c || c", "comp d || d",
+                                          "comp e || e", "comp f || f", "comp g || g", "comp h || h"};
+    
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 
     if (uiSize > 0) letterTrack = userInput[uiTrack].size();
@@ -648,6 +635,8 @@ int main(int argc, char* argv[]){
             std::string newShader = appendEvaluationFunction(exprs);
             shaderEvaluate = CreateComputeProgram(CompileShader(newShader, GL_COMPUTE_SHADER));
 
+            if (shaderEvaluate == -1) std::cout << newShader << std::endl;
+
             // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
@@ -754,189 +743,6 @@ int main(int argc, char* argv[]){
         double yStep = fabs(dirY.y - start.y);
 
         runCompute(shaderEvaluate, shaderCombine, functions.size(), comparisons.size(), start.x, start.y, xStep, yStep);
-
-        // // X and Y are the cordinates in screen cordinates
-        // for (int i = 0; i < functions.size(); i++){
-        //     for (int x = 0; x <= WINDOW_WIDTH; x++){
-        //         for (int y = 0; y <= WINDOW_HEIGHT; y++){
-
-        //             assignValue('x', start.x + x * xStep);
-        //             assignValue('y', -(start.y + y * yStep));
-
-        //             gridSigns[i][y][x] = eval(functions[i].expr) <= 0 ? NEGATIVE : POSITIVE;
-        //         }
-        //     }
-        // }
-
-        // // Clear the colored pixels arrays
-        // for (int i = 0; i < comparisons.size(); i++){
-        //     for (int x = 0; x <= WINDOW_WIDTH; x++){
-        //         for (int y = 0; y <= WINDOW_HEIGHT; y++){
-        //             coloredPixels[i][y][x] = false;
-        //             coloredBoundary[i][y][x] = false;
-        //         }
-        //     }
-        // }
-
-        // int dashLength = 20;
-        // // Go through every pixel on the screen and colour them based on the 4 corners
-        // for (int i = 0; i < comparisons.size(); i++){
-        //     double dashLength1 = dashLength; double dashLength2 = dashLength; bool drawDash1 = false; bool drawDash2 = false;
-        //     int index1 = comparisons[i].index1; int index2 = comparisons[i].index2;
-
-        //     SDL_FPoint lastDrawnBoundary = {-1, -1};
-
-        //     // Check if a function is strict or not
-        //     bool isStrict1 = functions[index1].relationSign == LT || functions[index1].relationSign == GT;
-        //     bool isStrict2 = functions[index2].relationSign == LT || functions[index2].relationSign == GT;
-
-        //     const Grid& grid1 = gridSigns[index1];
-        //     const Grid& grid2 = gridSigns[index2];
-        //     for (int y = 0; y < WINDOW_HEIGHT; y++){
-        //         int collisions1 = 0; int collisions2 = 0; bool collisionStart1 = false; bool collisionStart2 = false;
-
-        //         // Loop over the row first to find the number of intersection points with the function
-        //         for (int x = 0; x < WINDOW_WIDTH; x++){
-        //             int a1 = grid1[y][x];
-        //             int b1 = grid1[y][x + 1];
-        //             int c1 = grid1[y + 1][x];
-        //             int d1 = grid1[y + 1][x + 1];
-
-        //             int a2 = grid2[y][x];
-        //             int b2 = grid2[y][x + 1];
-        //             int c2 = grid2[y + 1][x];
-        //             int d2 = grid2[y + 1][x + 1];
-
-        //             bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
-        //             bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
-
-        //             // If the current point is on the boundary line, add to the collisions
-        //             // also make sure that a continuus line (y = 5) counts as one intersection point
-        //             if (!allCornersEqual1){ if (!collisionStart1) collisionStart1 = true; }
-        //             else { if (collisionStart1){ collisionStart1 = false; collisions1++; } }
-
-        //             if (!allCornersEqual2){ if (!collisionStart2) collisionStart2 = true; }
-        //             else { if (collisionStart2){ collisionStart2 = false; collisions2++; } }
-        //         }
-
-        //         // Avoid division by 0
-        //         if (collisions1 == 0) collisions1 = 1;
-        //         if (collisions2 == 0) collisions2 = 1;
-
-        //         for (int x = 0; x < WINDOW_WIDTH; x++){
-        //             int a1 = grid1[y][x];
-        //             int b1 = grid1[y][x + 1];
-        //             int c1 = grid1[y + 1][x];
-        //             int d1 = grid1[y + 1][x + 1];
-
-        //             int a2 = grid2[y][x];
-        //             int b2 = grid2[y][x + 1];
-        //             int c2 = grid2[y + 1][x];
-        //             int d2 = grid2[y + 1][x + 1];
-
-        //             bool allCornersEqual1 = a1 == b1 && a1 == c1 && a1 == d1;
-        //             bool allCornersEqual2 = a2 == b2 && a2 == c2 && a2 == d2;
-
-        //             // Decide if we should color the current pixel for both functions
-        //             bool colorPixel1, colorPixel2;
-        //             switch (functions[index1].relationSign){
-        //                 case EQ: colorPixel1 = !allCornersEqual1; break;
-        //                 case LT: colorPixel1 = allCornersEqual1 && a1 == NEGATIVE; break;
-        //                 case LTE: colorPixel1 = !allCornersEqual1 || a1 == NEGATIVE; break;
-        //                 case GT: colorPixel1 = allCornersEqual1 && a1 == POSITIVE; break;
-        //                 case GTE: colorPixel1 = !allCornersEqual1 || a1 == POSITIVE; break;
-        //             }
-
-        //             switch (functions[index2].relationSign){
-        //                 case EQ: colorPixel2 = !allCornersEqual2; break;
-        //                 case LT: colorPixel2 = allCornersEqual2 && a2 == NEGATIVE; break;
-        //                 case LTE: colorPixel2 = !allCornersEqual2 || a2 == NEGATIVE; break;
-        //                 case GT: colorPixel2 = allCornersEqual2 && a2 == POSITIVE; break;
-        //                 case GTE: colorPixel2 = !allCornersEqual2 || a2 == POSITIVE; break;
-        //             }
-
-        //             // Represent strict inequality with a dashed line (<) and the other inequality with a normal line (<=)
-        //             // ColorSolids -> same expression as it would be for just a normal straight line (=)
-        //             bool colorSolid1 = !allCornersEqual1;
-        //             bool colorSolid2 = !allCornersEqual2;
-
-        //             // Subtract from the dashLength if we intersected the function
-        //             if (colorSolid1 && isStrict1) dashLength1 -= 1.0 / (double)collisions1;
-        //             if (colorSolid2 && isStrict2) dashLength2 -= 1.0 / (double)collisions2;
-
-        //             // Switch from drawing points on the boundary to not drawing points on the boundary (or the reverse) to make
-        //             // the line look dashed
-        //             if (dashLength1 < 0.0){
-        //                 drawDash1 = !drawDash1;
-        //                 dashLength1 = dashLength;
-        //             }
-        //             if (dashLength2 < 0.0){
-        //                 drawDash2 = !drawDash2;
-        //                 dashLength2 = dashLength;
-        //             }
-
-        //             // Draw on the boundary if: were on the boundary, and either we need to draw a dash on a strict line, or we need 
-        //             // to draw a full line on a non-strict line
-        //             bool colorBoundary1 = (colorSolid1 && !isStrict1) || (colorSolid1 && drawDash1 && isStrict1);
-        //             bool colorBoundary2 = (colorSolid2 && !isStrict2) || (colorSolid2 && drawDash2 && isStrict2);
-        //             bool colorBoundary = colorBoundary1 || colorBoundary2;
-
-        //             // Shading
-        //             SDL_Color c = comparisons[i].clr;
-        //             bool setCurPixel = false;
-        //             switch (comparisons[i].boolean){
-        //                 case AND: if ((colorPixel1 && colorPixel2)) setCurPixel = true; break;
-        //                 case OR: if ((colorPixel1 || colorPixel2)) setCurPixel = true; break;
-        //                 case DIFF: if ((colorPixel1 && !colorPixel2)) setCurPixel = true; break;
-        //                 case XOR: if ((colorPixel1 ^ colorPixel2)) setCurPixel = true; break;
-        //             }
-
-        //             if (setCurPixel){
-        //                 setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 127);
-        //                 coloredPixels[i][y][x] = true;
-        //             }
-
-        //             // Boundary
-        //             if (colorBoundary){
-        //                 coloredBoundary[i][y][x] = true;
-        //             }
-        //         }
-        //     }
-        // }
-
-        // // Color the boundaries separately
-        // for (int i = 0; i < comparisons.size(); i++){
-        //     for (int x = 0; x < WINDOW_WIDTH; x++){
-        //         for (int y = 0; y < WINDOW_HEIGHT; y++){
-        //             if (coloredBoundary[i][y][x]){
-        //                 // Check if any of the 4 neighbours are on (if not, dont draw the boundary line)
-        //                 bool n1 = false, n2 = false, n3 = false, n4 = false;
-
-        //                 if (x != 0) n1 = coloredPixels[i][y][x-1];
-        //                 if (y != 0) n2 = coloredPixels[i][y-1][x];
-        //                 if (x != WINDOW_WIDTH) n3 = coloredPixels[i][y][x+1];
-        //                 if (y != WINDOW_HEIGHT) n4 = coloredPixels[i][y+1][x];
-
-        //                 bool coloredPixelNeighbour = n1 || n2 || n3 || n4;
-
-        //                 // Its not boundary if its surrounded by shaded points (eg. a = x < 5, b = x < 3, a || b -> you shouldn't draw 
-        //                 // a dashed line at x = 3)
-        //                 bool isABoundary = !(n1 && n2 && n3 && n4);
-
-        //                 SDL_Color c = comparisons[i].clr;
-        //                 if (coloredPixelNeighbour && isABoundary) setPixel(pixels, pitch, x, y, c.r, c.g, c.b, 255);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // SDL_UnlockTexture(pixelTex);
-
-        // // Draw pixel texture
-        // SDL_RenderTexture(renderer, pixelTex, NULL, NULL);
-
-        // // Clear the texture to black (RGBA = 0,0,0,255)
-        // memset(pixels, 0, pitch * WINDOW_HEIGHT);
 
         // Render the numbers on the axis
         {

@@ -107,16 +107,25 @@ void drawTexture(GLuint screenShader, GLuint texture, float r = 1.0f, float g = 
 // Helper function to convert an expr to a string
 std::string exprToString(const Expression& expr){
     // Stack to hold values
-    std::string stack[100];
+    std::vector<std::string> stack;
+    stack.resize(1);
     int sp = 0;
 
     // Go through all the elements
     for (int i = 0; i < expr.size(); i++){
         if (expr[i].kind == Stack::EXPR_NUMBER){
             stack[sp++] = std::to_string(expr[i].number);
+            stack.resize(sp+1);
         }
         else if (expr[i].kind == Stack::EXPR_VAR){
-            stack[sp++] = expr[i].var;
+            if (expr[i].var != "y" && expr[i].var != "x"){
+                stack[sp++] = std::to_string(getValue(expr[i].var));
+                stack.resize(sp+1);
+            }
+            else {
+                stack[sp++] = expr[i].var;
+                stack.resize(sp+1);
+            }
         }
         // Unary expressions, take the first element of the stack, and create a string like this: func(x), 
         // where func is the unary op, and x is the element we took off the stack
@@ -144,6 +153,7 @@ std::string exprToString(const Expression& expr){
 
             std::string fullStr = func + "(" + top + ")";
             stack[sp++] = fullStr;
+            stack.resize(sp+1);
         }
         // Get the top 2 elements of the stack. Syntax should look like this: (operand1 binary op operand2), eg. ((1 + x) + y)
         else if (expr[i].kind == Stack::EXPR_BINARY){
@@ -166,21 +176,20 @@ std::string exprToString(const Expression& expr){
 
             std::string fullStr;
             if (func == "^"){
-                fullStr = "(pow(" + val2 + ", " + val1 + ")";
+                fullStr = "(powInt(" + val2 + ", " + val1 + "))";
             }
             else if (func == "%"){
-                fullStr = "(mod(" + val2 + ", " + val1 + ")";
+                fullStr = "(mod(" + val2 + ", " + val1 + "))";
             }
             else {
                 fullStr = "(" + val2 + " " + func + " " + val1 + ")";
             }
             stack[sp++] = fullStr;
+            stack.resize(sp+1);
         }
     }
 
     if (sp <= 0) return "";
-
-    std::cout << stack[sp-1] << std::endl;
 
     return stack[sp-1];
 }
@@ -206,6 +215,8 @@ std::string appendEvaluationFunction(const std::vector<Expression>& exprs){
     for (int i = 0; i < exprs.size(); i++){
         const auto& expr = exprs[i];
 
+        if (expr.empty()) continue;
+
         std::string funcStr = exprToString(expr);
         insertStr.append(tab + tab + "case " + std::to_string(i) + "u: result = " + funcStr + "; break;\n");
     }
@@ -220,8 +231,6 @@ std::string appendEvaluationFunction(const std::vector<Expression>& exprs){
 
         evalStr.insert(appendTo, insertStr);
     }
-
-    std::cout << evalStr << std::endl;
 
     return evalStr;
 }
@@ -312,6 +321,7 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, s
     glUseProgram(shaderEvaluate);
 
     // Setting the uniforms
+    glUniform4f(glGetUniformLocation(shaderEvaluate, "u_screenParams"), startX, startY, stepX, stepY);
     glUniform2i(glGetUniformLocation(shaderEvaluate, "u_Res"), W, H);
     glUniform2i(glGetUniformLocation(shaderEvaluate, "u_CornerRes"), CORNER_W, CORNER_H);
 

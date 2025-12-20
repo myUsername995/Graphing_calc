@@ -1,5 +1,8 @@
 #pragma once
 
+// An expression class would make so much sense but if this works I won't bother with making that. Maybe you reading this in the 
+// future can make it.
+
 #include <vector>
 #include <array>
 #include <iostream>
@@ -32,7 +35,8 @@ typedef enum {
     TOKEN_ATAN,
     TOKEN_FLOOR,
     TOKEN_VAR,
-    TOKEN_END
+    TOKEN_END,
+    TOKEN_INVALID
 } TokenType;
 
 // Used to classify operations
@@ -44,7 +48,7 @@ enum Operations {
 typedef struct {
     TokenType type;
     double value;  // Only used for numbers
-    char var;      // Only used for variables
+    std::string var;      // Only used for variables
 } Token;
 
 struct Stack {
@@ -52,25 +56,17 @@ struct Stack {
     // EXPR_BINARY -> pop 2 objects off the stack
     enum { EXPR_NUMBER, EXPR_BINARY, EXPR_VAR, EXPR_UNARY } kind;
     double number;
-    char var;
+    std::string var;
     Operations op;
 };
 
 typedef struct Expr {
     enum { EXPR_NUMBER, EXPR_BINARY, EXPR_VAR, EXPR_UNARY } kind;
-    union {
-        double number;
-        char var;
-        struct {
-            Operations op;        // '+' or '-' or functions like sin cos
-            struct Expr* rhs;
-        } unary;
-        struct {
-            Operations op;
-            struct Expr* left;
-            struct Expr* right;
-        } binary;
-    };
+    double number;
+    std::string var;
+    Operations op;        // '+' or '-' or functions like sin cos
+    struct Expr* left;
+    struct Expr* right;
 } Expr;
 
 // Accept an input and parse it 
@@ -80,7 +76,11 @@ Expression parseInput(std::string input);
 double eval(const Expression& exprStack);
 
 // Variable functions
-void assignValue(unsigned char variable, double value);
-void setToConstant(unsigned char variable);
-void setToVariable(unsigned char variable);
+void assignValue(const std::string& variable, double value);
+double getValue(const std::string& variable);
+
+void setToConstant(const std::string& variable);
+void setToVariable(const std::string& variable);
+bool isConstant(const std::string& variable);
+
 void resetVariables();
