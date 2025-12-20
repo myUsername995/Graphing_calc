@@ -8,7 +8,7 @@ using the assignVariables() function before you call eval(), and it will evaluat
 
 Usable operations:
 binary (two arguements): +; -; *; /; ^; %;
-unary (single arguement): abs(); ln(); log(); sqrt(); sin(); cos(); tan(); asin(); acos(); atan(); fac(); floor;
+unary (single arguement): abs(); ln(); log(); sqrt(); sin(); cos(); tan(); asin(); acos(); atan(); floor;
 
 Constants (provided by this library): 
 -e (2.7182818)
@@ -711,7 +711,6 @@ Expression parseInput(std::string input){
     if (!expressionValid){
         freeExpressions(expression);
         errors += ("Expression couldn't be parsed\n");
-        printErrors();
         return {};
     }
 
@@ -735,8 +734,6 @@ Expression parseInput(std::string input){
         errors += (" ");
     }
     errors += ("\n");
-
-    printErrors();
     
     return exprStack;
 }

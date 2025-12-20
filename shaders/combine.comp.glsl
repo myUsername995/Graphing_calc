@@ -82,9 +82,7 @@ bool colorAtPixel(uint ci, int x, int y){
     else if (bOp == 2u) result = color1 && !color2; // DIFF
     else if (bOp == 3u) result = color1 != color2;   // XOR
 
-    bool isBoundary = !allEqual1 || !allEqual2;
-
-    return result || isBoundary;
+    return result;
 }
 
 void main(){
@@ -137,11 +135,11 @@ void main(){
         // Check if we should color any of the neighbouring 4 cells, if yes then colour the boundary too
         if (isBoundary){
             bool colorPixel1 = colorAtPixel(ci, x+1, y);
-            bool colorPixel2 = colorAtPixel(ci, x, y+1);
-            bool colorPixel3 = colorAtPixel(ci, x, y-1);
-            bool colorPixel4 = colorAtPixel(ci, x-1, y);
+            bool colorPixel2 = colorAtPixel(ci, x, y-1);
+            bool colorPixel3 = colorAtPixel(ci, x-1, y);
+            bool colorPixel4 = colorAtPixel(ci, x, y+1);
 
-            if (!(colorPixel1 || colorPixel2 || colorPixel3 || colorPixel4)) isBoundary = false;
+            isBoundary = (colorPixel1 || colorPixel2 || colorPixel3 || colorPixel4);
         }
 
         // Always colour the boundary + any additional pixels

@@ -431,14 +431,7 @@ int main(int argc, char* argv[]){
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"var a = 5", "var b = 10", "var c = 10", 
-                                          "func a = y^2 / a^2 + x^2 / b^2 < c", "func b = y^2 / a^2 + x^2 / b^2 < c-1",
-                                          "func c = y^2 / a^2 + x^2 / b^2 < c-2", "func d = y^2 / a^2 + x^2 / b^2 < c-3",
-                                          "func e = y^2 / a^2 + x^2 / b^2 < c-4", "func f = y^2 / a^2 + x^2 / b^2 < c-5",
-                                          "func g = y^2 / a^2 + x^2 / b^2 < c-6", "func h = y^2 / a^2 + x^2 / b^2 < c-7",
-                                          
-                                          "comp a || a", "comp b || b", "comp c || c", "comp d || d",
-                                          "comp e || e", "comp f || f", "comp g || g", "comp h || h"};
+    std::vector<std::string> userInput = {"func a = y < x", "func b = y > x^2", "comp a && b"};
     
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
 

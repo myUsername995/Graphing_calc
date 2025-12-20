@@ -7,30 +7,33 @@ layout(std430, binding = 0) writeonly buffer GridSSBO {
     uint grid[]; // size = funcCount * CORNER_W * CORNER_H
 };
 
-float powInt(float base, float exp){
-    float r = round(exp);
+float powInt(float base, float power){
+    int powLimit = 20;
+    float powerInt = round(power);
+    bool isCloseToInt = abs(power - round(power)) < 1e-4;
 
-    if (abs(exp - r) < 1e-4 && abs(r) <= 32.0) {
-        // 0^0 → define as 1
-        if (exp == 0)
-            return 1.0;
+    if (base == 0.0){
+        return 0.0;
+    }
 
-        // Avoid division by zero for negative exponents
-        if (base == 0.0)
-            return 0.0;
+    int dt = powerInt <= 0 ? 1 : -1;
+    float result = base;
 
-        float result = 1.0;
+    if (dt == 1){
+        base = 1.0 / base;
+    }
 
-        // Fixed upper bound so GLSL can unroll the loop
-        for (int i = 0; i < 32; ++i) {
-            if (i >= r) break;
+    if (abs(powerInt) < powLimit && isCloseToInt){
+        while (powerInt != 1){
             result *= base;
+
+            powerInt += dt;
         }
 
-        return exp < 0 ? 1.0 / result : result;
+        return result;
     }
     else {
-        return pow(base, exp);
+        return pow(base, power);
     }
 }
 
