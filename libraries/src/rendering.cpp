@@ -242,10 +242,20 @@ std::string appendEvaluationFunction(const std::vector<Expression>& exprs){
 GLuint ssboInstructions = 0, ssboOffsets = 0, ssboLengths = 0;
 GLuint ssboGridSigns = 0, ssboComparisons = 0, ssboRelationSigns = 0, ssboColors = 0;
 
+std::vector<Comparison> prevComparisons;
+std::vector<uint32_t> prevRelationSigns;
+std::vector<SDL_Color> prevFuncColors;
+size_t prevFuncCount;
+
 void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
                             const std::vector<uint32_t>& relationSigns,
                             const std::vector<SDL_Color>& funcColors,
                             size_t funcCount){
+
+    prevComparisons = comparisons;
+    prevRelationSigns = relationSigns;
+    prevFuncColors = funcColors;
+    prevFuncCount = funcCount;
 
     // Build color components as uint32 per-channel (r,g,b,a) to match GLSL uvec4
     std::vector<uint32_t> colorComponents;
@@ -367,9 +377,17 @@ int initializeRendering(int window_width, int window_height){
 
     // Used to render the graph
     screenShader = CreateProgram(CompileShader(LoadFile(basePath + "screenShader.vert"), GL_VERTEX_SHADER), 
-                                        CompileShader(LoadFile(basePath + "screenShader.frag"), GL_FRAGMENT_SHADER));
+                                 CompileShader(LoadFile(basePath + "screenShader.frag"), GL_FRAGMENT_SHADER));
 
     if (screenShader == -1) return -1;
     
     return 1;
+}
+
+void rendererResizeWindow(int window_width, int window_height){
+    W = window_width; H = window_height;
+    CORNER_W = window_width + 1; CORNER_H = window_height + 1;
+
+    // Update the buffers too
+    createBuffersAndUpload(prevComparisons, prevRelationSigns, prevFuncColors, prevFuncCount);
 }

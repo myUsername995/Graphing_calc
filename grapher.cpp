@@ -77,8 +77,8 @@ pixel (otherwise when comparing 2 functions, the result might look silly).
 #include "GPU.hpp"                      // General drawing functions compatible with openGL
 #include "rendering.hpp"                // Specific rendering of functions
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 800
+float WINDOW_WIDTH = 800;
+float WINDOW_HEIGHT = 800;
 
 std::array<SDL_Color, 9> colors = {
     SDL_Color{255, 0, 0, 127},   // Red
@@ -111,6 +111,15 @@ struct compare {
 
     // Color of the function on the graph
     SDL_Color clr = {0, 0, 0, 0};
+};
+
+struct ZoomAndPanning {
+    double zoom;
+    SDL_FPoint top_left;
+    SDL_FPoint startPan;
+
+    double curWorldWidth, curWorldHeight;
+    double gridWidth, gridHeight;
 };
 
 SDL_FPoint world_to_screen(const SDL_FPoint& p, const double& zoom, const SDL_FPoint& top_left){
@@ -407,6 +416,42 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
     comparisons = newComparisons;
 }
 
+#define Grid std::vector<std::vector<States>>
+
+int initializeEverything(GLuint& evalute, GLuint& combine, int WINDOW_WIDTH, int WINDOW_HEIGHT, SDL_Window* window, ZoomAndPanning& moving){
+    if (initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT) == -1) return -1;
+    if (initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT) == -1) return -1;
+
+    // Used to evaluate the function
+    evalute = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
+    combine = CreateComputeProgram(CompileShader(LoadFile("shaders\\combine.comp.glsl"), GL_COMPUTE_SHADER));
+
+    if (evalute == -1 || combine == -1) return -1;
+
+    // Center the view at the start
+    moving.zoom = 1.0 / 20.0;
+    moving.top_left.x = 0 - moving.zoom * (WINDOW_WIDTH / 2);
+    moving.top_left.y = 0 - moving.zoom * (WINDOW_HEIGHT / 2);
+    moving.startPan = {0, 0};
+
+    moving.curWorldWidth = WINDOW_WIDTH;
+    moving.curWorldHeight = WINDOW_HEIGHT;
+    moving.gridWidth = WINDOW_WIDTH / 20.0;
+    moving.gridHeight = WINDOW_HEIGHT / 20.0;
+
+    return 1;
+}
+
+void resizeWindow(int WINDOW_WIDTH, int WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window, SDL_FPoint midP){
+    GPUResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
+    rendererResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+    moving.top_left.x = midP.x - moving.zoom * (WINDOW_WIDTH / 2);
+    moving.top_left.y = midP.y - moving.zoom * (WINDOW_HEIGHT / 2);
+
+    moving.startPan = {0, 0};
+}
+
 int main(int argc, char* argv[]){
 
     SDL_Init(SDL_INIT_VIDEO);
@@ -416,70 +461,33 @@ int main(int argc, char* argv[]){
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    SDL_Window* window = SDL_CreateWindow("Grapher", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
-    initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT);
-    int error = initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT);
-    if (error == -1) return 0;
-
-    // Used to evaluate the function
-    GLuint shaderEvaluate = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
-    GLuint shaderCombine = CreateComputeProgram(CompileShader(LoadFile("shaders\\combine.comp.glsl"), GL_COMPUTE_SHADER));
-    if (shaderEvaluate == -1 || shaderCombine == -1) return 0;
+    SDL_Window* window = SDL_CreateWindow("Graphing calculator", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     bool leftMouseDown = false;
     bool updateExpressions = true;
-    double zoom = 1.0 / 20.0;
     double fps = 1000;
+    double FPS;
     bool run = true;
     SDL_Event event;
 
-    // Center the view at the start
-    SDL_FPoint top_left;
-    top_left.x = 0 - zoom * (WINDOW_WIDTH / 2);
-    top_left.y = 0 - zoom * (WINDOW_HEIGHT / 2);
-    SDL_FPoint startPan = {0, 0};
-
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"func a: y <= (1/sqrt(pi*2*o^2)) * (e^(-((x-u)^2/(2*o^2))))", "var o = 0.5", "var u = 0", "comp a || a"};
+    std::vector<std::string> userInput = {"var a = 5", "var b = a * 3", "func ellipse: y^2 / a^2 + x^2 / b^2 < 1", "func a: y < x^2", "comp a \\ ellipse"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
     if (uiSize > 0) letterTrack = userInput[uiTrack].size();
 
-    std::vector<std::string> str = {"var a = 5", "var b = a * 3", "func ellipse: y^2 / a^2 + x^2 / b^2 < 1", "func a: y < x^2", "comp a \\ ellipse"};
+    ZoomAndPanning moving; GLuint shaderEvaluate, shaderCombine;
+    if (initializeEverything(shaderEvaluate, shaderCombine, WINDOW_WIDTH, WINDOW_HEIGHT, window, moving) == -1) return 0;
+
+    TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
 
     std::vector<compare> comparisons;
     std::vector<Function> functions;
-    #define Grid std::vector<std::vector<States>>
-
-    // An arbitrary upper limit for the number of functions you can input
-    int numFunctions = 100;
-
-    // Create a grid to record the sign of values
-    std::vector<Grid> gridSigns;
-    std::vector<std::vector<std::vector<bool>>> coloredPixels;
-    std::vector<std::vector<std::vector<bool>>> coloredBoundary;
-
-    // Initalize the grids
-    for (int i = 0; i < numFunctions; i++){
-        std::vector<std::vector<States>> grid(WINDOW_HEIGHT + 1, std::vector<States>(WINDOW_WIDTH + 1));
-        std::vector<std::vector<bool>> pixels(WINDOW_HEIGHT + 1, std::vector<bool>(WINDOW_WIDTH + 1));
-        std::vector<std::vector<bool>> boundary(WINDOW_HEIGHT + 1, std::vector<bool>(WINDOW_WIDTH + 1));
-
-        gridSigns.push_back(grid);
-        coloredPixels.push_back(pixels);
-        coloredBoundary.push_back(boundary);
-    }
-
-    double curWorldWidth = WINDOW_WIDTH;
-    double curWorldHeight = WINDOW_HEIGHT;
-    double gridWidth = WINDOW_WIDTH / 20.0;
-    double gridHeight = WINDOW_HEIGHT / 20.0;
-    double FPS;
-
-    TTF_Font* font = TTF_OpenFont("Roboto_Condensed-Black.ttf", 20);
-    std::vector<Expression> exprs; std::vector<uint32_t> relationSigns; std::vector<Comparison> cmprs;
+    std::vector<Expression> exprs;
+    std::vector<uint32_t> relationSigns;
+    std::vector<Comparison> cmprs;
     std::vector<SDL_Color> funcColors;
-    SDL_StartTextInput(window);
 
+    SDL_StartTextInput(window);
     while (run){
         Clock clk = begin();
 
@@ -492,10 +500,22 @@ int main(int argc, char* argv[]){
                     run = false;
                     break;
                 }
+                case SDL_EVENT_WINDOW_RESIZED: {
+                    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
+
+                    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
+                                       (moving.top_left.y + bottom_right.y) / 2.0f};
+
+                    WINDOW_WIDTH  = event.window.data1;
+                    WINDOW_HEIGHT = event.window.data2;
+
+                    resizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT, moving, window, midP);
+                    break;
+                }
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
                     if (event.button.button == SDL_BUTTON_LEFT){
                         leftMouseDown = true;
-                        startPan = {event.button.x, event.button.y};
+                        moving.startPan = {event.button.x, event.button.y};
                     }
                     break;
                 }
@@ -587,6 +607,10 @@ int main(int argc, char* argv[]){
                             updateExpressions = true;
                             break;
                         }
+                        case SDLK_ESCAPE: {
+                            run = false;
+                            break;
+                        }
                     }
                     break;
                 }
@@ -598,19 +622,19 @@ int main(int argc, char* argv[]){
                     SDL_GetMouseState(&x, &y);
 
                     SDL_FPoint mouseBeforeZoom = {x, y};
-                    mouseBeforeZoom = screen_to_world(mouseBeforeZoom, zoom, top_left);
+                    mouseBeforeZoom = screen_to_world(mouseBeforeZoom, moving.zoom, moving.top_left);
 
-                    zoom -= event.wheel.y * zoom / 10.0;
+                    moving.zoom -= event.wheel.y * moving.zoom / 10.0;
 
-                    if (zoom < 1e-5){
-                        zoom = 1e-5;
+                    if (moving.zoom < 1e-5){
+                        moving.zoom = 1e-5;
                     }
 
                     SDL_FPoint mouseAfterZoom = {x, y};
-                    mouseAfterZoom = screen_to_world(mouseAfterZoom, zoom, top_left);
+                    mouseAfterZoom = screen_to_world(mouseAfterZoom, moving.zoom, moving.top_left);
 
-                    top_left.x += mouseBeforeZoom.x - mouseAfterZoom.x;
-                    top_left.y += mouseBeforeZoom.y - mouseAfterZoom.y;
+                    moving.top_left.x += mouseBeforeZoom.x - mouseAfterZoom.x;
+                    moving.top_left.y += mouseBeforeZoom.y - mouseAfterZoom.y;
                     break;
                 }
             }
@@ -651,58 +675,58 @@ int main(int argc, char* argv[]){
         SDL_GetMouseState(&x, &y);
 
         if (leftMouseDown){
-            top_left.x -= (x - startPan.x) * zoom;
-            top_left.y -= (y - startPan.y) * zoom;
+            moving.top_left.x -= (x - moving.startPan.x) * moving.zoom;
+            moving.top_left.y -= (y - moving.startPan.y) * moving.zoom;
 
-            startPan = {x, y};
+            moving.startPan = {x, y};
         }
 
         // Get world bounds of visible screen
         SDL_FPoint screen_top_left = {0, 0};
         SDL_FPoint screen_bottom_right = {WINDOW_WIDTH, WINDOW_HEIGHT};
 
-        SDL_FPoint world_top_left = screen_to_world(screen_top_left, zoom, top_left);
-        SDL_FPoint world_bottom_right = screen_to_world(screen_bottom_right, zoom, top_left);
+        SDL_FPoint world_top_left = screen_to_world(screen_top_left, moving.zoom, moving.top_left);
+        SDL_FPoint world_bottom_right = screen_to_world(screen_bottom_right, moving.zoom, moving.top_left);
 
         float worldWidth = world_bottom_right.x - world_top_left.x;
         float worldHeight = world_bottom_right.y - world_top_left.y;
 
         // Grow the grid
-        if (worldWidth >= curWorldWidth / 4 || worldHeight >= curWorldHeight / 4){
-            curWorldWidth *= 2;
-            curWorldHeight *= 2;
+        if (worldWidth >= moving.curWorldWidth / 4 || worldHeight >= moving.curWorldHeight / 4){
+            moving.curWorldWidth *= 2;
+            moving.curWorldHeight *= 2;
 
             // Update the grid widths
-            gridWidth *= 2;
-            gridHeight *= 2;
+            moving.gridWidth *= 2;
+            moving.gridHeight *= 2;
         }
 
         // Shrink the grid
-        if (worldWidth < curWorldWidth / 4 || worldHeight < curWorldHeight / 4){
-            curWorldWidth /= 2;
-            curWorldHeight /= 2;
+        if (worldWidth < moving.curWorldWidth / 4 || worldHeight < moving.curWorldHeight / 4){
+            moving.curWorldWidth /= 2;
+            moving.curWorldHeight /= 2;
 
-            gridWidth /= 2;
-            gridHeight /= 2;
+            moving.gridWidth /= 2;
+            moving.gridHeight /= 2;
         }
 
-        int startGridX = floor((world_top_left.x) / (gridWidth));
-        int endGridX = ceil((world_bottom_right.x) / (gridWidth));
+        int startGridX = floor((world_top_left.x) / (moving.gridWidth));
+        int endGridX = ceil((world_bottom_right.x) / (moving.gridWidth));
 
-        int startGridY = floor((world_top_left.y) / (gridHeight));
-        int endGridY = ceil((world_bottom_right.y) / (gridHeight));
+        int startGridY = floor((world_top_left.y) / (moving.gridHeight));
+        int endGridY = ceil((world_bottom_right.y) / (moving.gridHeight));
 
         // Render the grids
         for (int i = startGridX; i < endGridX; i++){
-            SDL_FPoint p1 = world_to_screen({float(i * gridWidth), world_top_left.y}, zoom, top_left);
-            SDL_FPoint p2 = world_to_screen({float(i * gridWidth), world_bottom_right.y}, zoom, top_left);
+            SDL_FPoint p1 = world_to_screen({float(i * moving.gridWidth), world_top_left.y}, moving.zoom, moving.top_left);
+            SDL_FPoint p2 = world_to_screen({float(i * moving.gridWidth), world_bottom_right.y}, moving.zoom, moving.top_left);
 
             GPURenderLine(p1, p2, {127, 127, 127, 127});
         }
 
         for (int i = startGridY; i < endGridY; i++){
-            SDL_FPoint p1 = world_to_screen({world_top_left.x, float(i * gridHeight)}, zoom, top_left);
-            SDL_FPoint p2 = world_to_screen({world_bottom_right.x, float(i * gridHeight)}, zoom, top_left);
+            SDL_FPoint p1 = world_to_screen({world_top_left.x, float(i * moving.gridHeight)}, moving.zoom, moving.top_left);
+            SDL_FPoint p2 = world_to_screen({world_bottom_right.x, float(i * moving.gridHeight)}, moving.zoom, moving.top_left);
 
             GPURenderLine(p1, p2, {127, 127, 127, 127});
         }
@@ -713,8 +737,8 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_world = {0, world_top_left.y};
         SDL_FPoint p2_world = {0, world_bottom_right.y};
 
-        SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
-        SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
+        SDL_FPoint p1_screen = world_to_screen(p1_world, moving.zoom, moving.top_left);
+        SDL_FPoint p2_screen = world_to_screen(p2_world, moving.zoom, moving.top_left);
 
         GPURenderLine(p1_screen, p2_screen, {255, 255, 255, 255});
         }
@@ -724,15 +748,15 @@ int main(int argc, char* argv[]){
         SDL_FPoint p1_world = {world_top_left.x, 0};
         SDL_FPoint p2_world = {world_bottom_right.x, 0};
 
-        SDL_FPoint p1_screen = world_to_screen(p1_world, zoom, top_left);
-        SDL_FPoint p2_screen = world_to_screen(p2_world, zoom, top_left);
+        SDL_FPoint p1_screen = world_to_screen(p1_world, moving.zoom, moving.top_left);
+        SDL_FPoint p2_screen = world_to_screen(p2_world, moving.zoom, moving.top_left);
 
         GPURenderLine(p1_screen, p2_screen, {255, 255, 255, 255});
         }
 
-        SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, zoom, top_left);
-        SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, zoom, top_left);
-        SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, zoom, top_left);
+        SDL_FPoint start = screen_to_world({(float)(0), (float)(0)}, moving.zoom, moving.top_left);
+        SDL_FPoint dirX = screen_to_world({(float)(1), (float)(0)}, moving.zoom, moving.top_left);
+        SDL_FPoint dirY = screen_to_world({(float)(0), (float)(1)}, moving.zoom, moving.top_left);
 
         double xStep = fabs(dirX.x - start.x);
         double yStep = fabs(dirY.y - start.y);
@@ -741,7 +765,7 @@ int main(int argc, char* argv[]){
 
         // Render the numbers on the axis
         {
-        float startNum = gridWidth + gridWidth * (startGridX-1);
+        float startNum = moving.gridWidth + moving.gridWidth * (startGridX-1);
         std::string number;
 
         bool horizontalOnTop = world_top_left.y > 0 && world_bottom_right.y > 0;
@@ -750,7 +774,7 @@ int main(int argc, char* argv[]){
 
         // Draw the numbers on the horizontal line
         for (int i = startGridX; i < endGridX; i++){
-            SDL_FPoint p1 = world_to_screen({float(i * gridWidth), 0}, zoom, top_left);
+            SDL_FPoint p1 = world_to_screen({float(i * moving.gridWidth), 0}, moving.zoom, moving.top_left);
 
             if (horizontalVisible){
                 p1.y -= 10;
@@ -763,14 +787,14 @@ int main(int argc, char* argv[]){
             }
 
             number = to_string_with_precision(startNum, 3);
-            startNum += gridWidth;
+            startNum += moving.gridWidth;
 
             GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
 
         {
-        float startNum = gridHeight + gridHeight * (startGridY-1);
+        float startNum = moving.gridHeight + moving.gridHeight * (startGridY-1);
         std::string number;
 
         bool verticalOnRight = world_top_left.x < 0 && world_bottom_right.x < 0;
@@ -780,10 +804,10 @@ int main(int argc, char* argv[]){
         for (int i = startGridY; i < endGridY; i++){
             // Dont render 0 (horizontal line already rendered it)
             if (startNum == 0 && verticalVisible){
-                startNum += gridHeight;
+                startNum += moving.gridHeight;
                 continue;
             }
-            SDL_FPoint p1 = world_to_screen({0, float(i * gridHeight)}, zoom, top_left);
+            SDL_FPoint p1 = world_to_screen({0, float(i * moving.gridHeight)}, moving.zoom, moving.top_left);
 
             if (verticalVisible){
                 p1.y -= 10;
@@ -796,7 +820,7 @@ int main(int argc, char* argv[]){
             }
 
             number = to_string_with_precision(-startNum, 3);
-            startNum += gridHeight;
+            startNum += moving.gridHeight;
 
             GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }

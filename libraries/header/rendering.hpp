@@ -21,3 +21,4 @@ void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, s
 
 // Call this before calling any other functions
 int initializeRendering(int window_width, int window_height);
+void rendererResizeWindow(int window_width, int window_height);

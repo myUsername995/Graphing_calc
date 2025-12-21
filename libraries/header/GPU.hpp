@@ -16,4 +16,5 @@ void GPURenderRect(SDL_FRect pos, SDL_Color color, bool filled);
 SDL_FRect GPURenderText(TTF_Font* font, const std::string& str, SDL_FPoint pos, SDL_Color color); // Render text
 
 // Initialisation
-void initalizeGPU(SDL_Window* window, int window_width, int window_height);
+int initalizeGPU(SDL_Window* window, int window_width, int window_height);
+void GPUResizeWindow(int window_width, int window_height);

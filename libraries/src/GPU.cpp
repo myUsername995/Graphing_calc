@@ -263,7 +263,7 @@ SDL_FRect GPURenderText(TTF_Font* font, const std::string& str, SDL_FPoint pos, 
     return {pos.x, pos.y, float(w), float(h)}; 
 }
 
-void createShaders(){
+int createShaders(){
     // shape.frag
     const char* shape_frag = 
     "#version 430 core\n"
@@ -321,12 +321,17 @@ void createShaders(){
 
     textShader = CreateProgram(CompileShader(text_frag, GL_FRAGMENT_SHADER), 
                                     CompileShader(text_vert, GL_VERTEX_SHADER));
+
+    if (shapeShader == -1 || textShader == -1) return -1;
+
+    return 1;
 }
 
 // Creates openGL context, loads glad, initializes text and shape rendering, sets default settings, creaters shaders
-void initalizeGPU(SDL_Window* window, int window_width, int window_height){
+int initalizeGPU(SDL_Window* window, int window_width, int window_height){
     SDL_GLContext glctx = SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, glctx);
+
+    if (!SDL_GL_MakeCurrent(window, glctx)) return -1;
 
     gladLoadGL();
     initTextQuad();
@@ -335,8 +340,20 @@ void initalizeGPU(SDL_Window* window, int window_width, int window_height){
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    createShaders();
+    if (createShaders() == -1) return -1;
 
     W = window_width;
     H = window_height;
+
+    glViewport(0, 0, W, H);
+
+    return 1;
+}
+
+void GPUResizeWindow(int window_width, int window_height){
+    W = window_width;
+    H = window_height;
+
+    glViewport(0, 0, W, H);
+
 }
