@@ -82,7 +82,9 @@ bool colorAtPixel(uint ci, int x, int y){
     else if (bOp == 2u) result = color1 && !color2; // DIFF
     else if (bOp == 3u) result = color1 != color2;   // XOR
 
-    return result;
+    bool isBoundary = !allEqual1 || !allEqual2;
+
+    return result || isBoundary;
 }
 
 void main(){
@@ -139,7 +141,8 @@ void main(){
             bool colorPixel3 = colorAtPixel(ci, x-1, y);
             bool colorPixel4 = colorAtPixel(ci, x, y+1);
 
-            isBoundary = (colorPixel1 || colorPixel2 || colorPixel3 || colorPixel4);
+            isBoundary = (colorPixel1 || colorPixel2 || colorPixel3 || colorPixel4) &&
+                        !(colorPixel1 && colorPixel2 && colorPixel3 && colorPixel4);
         }
 
         // Always colour the boundary + any additional pixels

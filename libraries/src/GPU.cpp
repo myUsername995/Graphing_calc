@@ -6,9 +6,9 @@ The functions that this library provides are used to make working with the GPU m
 -CreateProgram() -> creates a shader program from a vertex and fragment shader
 -CreateComputeProgram() -> creates a shader program from a computeshader
 
--renderLine() -> renders a line
--renderRect() -> renders a rectangle
--renderText() -> renders text
+-GPURenderLine() -> renders a line
+-GPURenderRect() -> renders a rectangle
+-GPURenderText() -> renders text
 
 -initalizeGPU() -> creates all the GPU arrays and other things
 

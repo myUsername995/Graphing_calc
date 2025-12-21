@@ -47,7 +47,7 @@ enum Operations {
 
 typedef struct {
     TokenType type;
-    double value;  // Only used for numbers
+    double value;         // Only used for numbers
     std::string var;      // Only used for variables
 } Token;
 
