@@ -4,7 +4,7 @@ The functions that this library provides are used to make working with the GPU m
 -LoadFile() -> loads a file based on the file path
 -CompileShader() -> compiles a shader (fragment or vertex)
 -CreateProgram() -> creates a shader program from a vertex and fragment shader
--CreateComputeProgram() -> creates a shader program from a computeshader
+-CreateComputeProgram() -> creates a shader program from a compute shader
 
 -GPURenderLine() -> renders a line
 -GPURenderRect() -> renders a rectangle

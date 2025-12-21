@@ -19,7 +19,7 @@ INCLUDES = -I"./include" \
            -I"."
 
 
-# Library dirs and libs
+# Library directories and libraries
 LIBS = -L"./lib" \
        -lSDL3 -lSDL3_ttf
 

@@ -109,12 +109,20 @@ std::string exprToString(const Expression& expr){
     // Go through all the elements
     for (int i = 0; i < expr.size(); i++){
         if (expr[i].kind == Stack::EXPR_NUMBER){
-            stack[sp++] = std::to_string(expr[i].number);
+            double val = expr[i].number;
+
+            if (std::isnan(val) || std::isinf(val)) val = 0;
+
+            stack[sp++] = std::to_string(val);
             stack.resize(sp+1);
         }
         else if (expr[i].kind == Stack::EXPR_VAR){
             if (expr[i].var != "y" && expr[i].var != "x"){
-                stack[sp++] = std::to_string(getValue(expr[i].var));
+                double val = getValue(expr[i].var);
+
+                if (std::isnan(val) || std::isinf(val)) val = 0;
+
+                stack[sp++] = std::to_string(val);
                 stack.resize(sp+1);
             }
             else {

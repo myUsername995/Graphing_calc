@@ -483,7 +483,7 @@ static Expr* parse_expression() {
 
 double eval(const Expression& exprStack) {
     // Preallocated small fixed-size stack
-    double stack[100];  
+    double stack[256];  
     int sp = 0;  // Stack pointer
 
     for (const auto& elem : exprStack) {
@@ -583,8 +583,7 @@ void treeToPostfix(Expr* expression, Expression& exprStack){
 }
 
 void foldConstants(Expression& exprStack){
-    Expression stack; int size = 100;
-    stack.resize(size);
+    Expression stack; stack.resize(256);
     int sp = 0;
 
     // Traverse the stack, and for each op we see, if the top 2 (or 1) elements of the stack are constants, fold them
@@ -592,10 +591,6 @@ void foldConstants(Expression& exprStack){
         switch (elem.kind){
             case Stack::EXPR_NUMBER: {
                 stack[sp++] = elem;
-
-                if (sp >= size){
-                    size *= 2; stack.resize(size);
-                }
                 break;
             }
             case Stack::EXPR_VAR: {
@@ -613,9 +608,6 @@ void foldConstants(Expression& exprStack){
                 newElem.op = (Operations)0;
 
                 stack[sp++] = newElem;
-                if (sp >= size){
-                    size *= 2; stack.resize(size);
-                }
                 break;
             }
             case Stack::EXPR_UNARY: {
@@ -640,9 +632,6 @@ void foldConstants(Expression& exprStack){
                 // Otherwise just add the operator to the end of the stack
                 else {
                     stack[sp++] = elem;
-                    if (sp >= size){
-                    size *= 2; stack.resize(size);
-                }
                 }
                 break;
             }
@@ -677,9 +666,6 @@ void foldConstants(Expression& exprStack){
                 // Just add the operation
                 else {
                     stack[sp++] = elem;
-                    if (sp >= size){
-                        size *= 2; stack.resize(size);
-                    }
                 }
                 break;
             }
@@ -687,7 +673,6 @@ void foldConstants(Expression& exprStack){
     }
 
     stack.resize(sp);
-
     exprStack = stack;
 }
 
@@ -698,17 +683,14 @@ void printErrors(){
 }
 
 Expression parseInput(std::string input){
+    current = 0;
     expressionValid = true;
     errors.clear();
-    
-    current = 0;
     tokens.clear();
 
     // Get rid of the newline
     size_t pos = input.find('\n');
-    if (pos != std::string::npos) {
-        input.erase(pos);
-    }
+    if (pos != std::string::npos) input.erase(pos);
 
     removeSpaces(input);
 

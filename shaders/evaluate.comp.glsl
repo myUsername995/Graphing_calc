@@ -7,34 +7,38 @@ layout(std430, binding = 0) writeonly buffer GridSSBO {
     uint grid[]; // size = funcCount * CORNER_W * CORNER_H
 };
 
-float powInt(float base, float power){
+float powInt(float base, float power) {
     int powLimit = 20;
     float powerInt = round(power);
-    bool isCloseToInt = abs(power - round(power)) < 1e-4;
+    bool isCloseToInt = abs(power - powerInt) < 1e-4;
 
-    if (base == 0.0){
-        return 0.0;
-    }
-
-    int dt = powerInt <= 0 ? 1 : -1;
-    float result = base;
-
-    if (dt == 1){
-        base = 1.0 / base;
-    }
-
-    if (abs(powerInt) < powLimit && isCloseToInt){
-        while (powerInt != 1){
-            result *= base;
-
-            powerInt += dt;
-        }
-
-        return result;
-    }
-    else {
+    if (!isCloseToInt || abs(powerInt) >= powLimit) {
         return pow(base, power);
     }
+
+    if (powerInt == 0) {
+        return 1.0f;
+    }
+
+    if (base == 0.0f) {
+        return 0.0f;
+    }
+
+    bool negative = powerInt < 0;
+    float exp = abs(powerInt);
+
+    float result = 1.0f;
+
+    if (negative) {
+        base = 1.0f / base;
+    }
+
+    while (exp > 0) {
+        result *= base;
+        exp--;
+    }
+
+    return result;
 }
 
 // Screen params as uniforms

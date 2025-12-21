@@ -7,7 +7,7 @@ It will always return in milliseconds.
 
 CalculateFPS: You can call the calculateFPS function with a time that you measured between the start of one frame and the end of one frame 
 (dt), and it will give you back an FPS count. If you pass more values the FPS value becomes more accurate, because each dt is saved in an 
-array (up until a certain size), and theyre averaged.
+array (up until a certain size), and they're averaged.
 */
 
 #include "time.hpp"

@@ -64,7 +64,7 @@ typedef struct Expr {
     enum { EXPR_NUMBER, EXPR_BINARY, EXPR_VAR, EXPR_UNARY } kind;
     double number;
     std::string var;
-    Operations op;        // '+' or '-' or functions like sin cos
+    Operations op;        // '+' or '-' or functions like sin, cos, tan etc...
     struct Expr* left;
     struct Expr* right;
 } Expr;

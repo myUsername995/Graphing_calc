@@ -19,4 +19,5 @@ void createBuffersAndUpload(const std::vector<Comparison>& comparisons,
 void runCompute(GLuint shaderEvaluate, GLuint shaderCombine, size_t funcCount, size_t comparisonCount, 
                 float startX, float startY, float stepX, float stepY);
 
+// Call this before calling any other functions
 int initializeRendering(int window_width, int window_height);

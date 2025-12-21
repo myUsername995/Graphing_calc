@@ -440,9 +440,11 @@ int main(int argc, char* argv[]){
     SDL_FPoint startPan = {0, 0};
 
     int letterTrack = 0;
-    std::vector<std::string> userInput = {"var a = 5", "var b = a * 3", "func ellipse: y^2 / a^2 + x^2 / b^2 < 1", "func a: y < x^2", "comp a \\ ellipse"};
+    std::vector<std::string> userInput = {"func a: y <= (1/sqrt(pi*2*o^2)) * (e^(-((x-u)^2/(2*o^2))))", "var o = 0.5", "var u = 0", "comp a || a"};
     int uiTrack = userInput.size() - 1; int uiSize = userInput.size();
     if (uiSize > 0) letterTrack = userInput[uiTrack].size();
+
+    std::vector<std::string> str = {"var a = 5", "var b = a * 3", "func ellipse: y^2 / a^2 + x^2 / b^2 < 1", "func a: y < x^2", "comp a \\ ellipse"};
 
     std::vector<compare> comparisons;
     std::vector<Function> functions;
