@@ -443,7 +443,7 @@ int initializeEverything(GLuint& evalute, GLuint& combine, int WINDOW_WIDTH, int
     return 1;
 }
 
-void resizeWindow(const SDL_Event& event, int& WINDOW_WIDTH, int& WINDOW_HEIGHT, ZoomAndPanning& moving, const SDL_FPoint& midP, SDL_Window* window){
+void resizeWindow(const SDL_Event& event, float& WINDOW_WIDTH, float& WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window){
     // Use the old window attribute to find the current midpoint first
     SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
 
@@ -512,7 +512,7 @@ int main(int argc, char* argv[]){
                     break;
                 }
                 case SDL_EVENT_WINDOW_RESIZED: {
-                    resizeWindow(event, WINDOW_WIDTH, WINDOW_HEIGHT, moving, midP, window);
+                    resizeWindow(event, WINDOW_WIDTH, WINDOW_HEIGHT, moving, window);
                     break;
                 }
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
