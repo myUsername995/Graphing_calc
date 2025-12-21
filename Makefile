@@ -14,13 +14,13 @@ SRC = grapher.cpp \
       glad/glad.c
 
 # Include directories
-INCLUDES = -I"./include" \
+INCLUDES = -I"C:/Files/.vscode/include" \
            -I"./libraries/header" \
            -I"."
 
 
 # Library directories and libraries
-LIBS = -L"./lib" \
+LIBS = -L"C:/Files/.vscode/lib" \
        -lSDL3 -lSDL3_ttf
 
 $(TARGET): $(SRC)
