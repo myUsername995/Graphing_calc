@@ -304,7 +304,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             assignValue(var, value);
             setToConstant(var);
         }
-        // Handle functions, form: "func f(x) = y <= x"
+        // Handle functions, form: "func f(x): y <= x"
         else if (checkInput(input, "func", 0)){
             int i = 4;
 
@@ -339,6 +339,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             std::string expr = input.substr(i);
             exprs.push_back(expr);
         }
+        // Handle comparisons, form: "comp a || a"
         else if (checkInput(input, "comp", 0)){
             int i = 4;
 
@@ -442,7 +443,17 @@ int initializeEverything(GLuint& evalute, GLuint& combine, int WINDOW_WIDTH, int
     return 1;
 }
 
-void resizeWindow(int WINDOW_WIDTH, int WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window, SDL_FPoint midP){
+void resizeWindow(const SDL_Event& event, int& WINDOW_WIDTH, int& WINDOW_HEIGHT, ZoomAndPanning& moving, const SDL_FPoint& midP, SDL_Window* window){
+    // Use the old window attribute to find the current midpoint first
+    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
+
+    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
+                       (moving.top_left.y + bottom_right.y) / 2.0f};
+
+    // Update the window attributes
+    WINDOW_WIDTH  = event.window.data1;
+    WINDOW_HEIGHT = event.window.data2;
+    
     GPUResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
     rendererResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -501,15 +512,7 @@ int main(int argc, char* argv[]){
                     break;
                 }
                 case SDL_EVENT_WINDOW_RESIZED: {
-                    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
-
-                    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
-                                       (moving.top_left.y + bottom_right.y) / 2.0f};
-
-                    WINDOW_WIDTH  = event.window.data1;
-                    WINDOW_HEIGHT = event.window.data2;
-
-                    resizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT, moving, window, midP);
+                    resizeWindow(event, WINDOW_WIDTH, WINDOW_HEIGHT, moving, midP, window);
                     break;
                 }
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
