@@ -632,8 +632,6 @@ int main(int argc, char* argv[]){
             std::string newShader = appendEvaluationFunction(exprs);
             shaderEvaluate = CreateComputeProgram(CompileShader(newShader, GL_COMPUTE_SHADER));
 
-            if (shaderEvaluate == -1) std::cout << newShader << std::endl;
-
             // Push from comparisons into simpler arrays
             for (const auto& elem : comparisons){
                 cmprs.push_back(Comparison{(unsigned int)elem.index1, (unsigned int)elem.index2, elem.boolean, 0});
