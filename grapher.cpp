@@ -418,15 +418,15 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
 
 #define Grid std::vector<std::vector<States>>
 
-int initializeEverything(GLuint& evalute, GLuint& combine, int WINDOW_WIDTH, int WINDOW_HEIGHT, SDL_Window* window, ZoomAndPanning& moving){
+int initializeEverything(GLuint& evaluate, GLuint& combine, int WINDOW_WIDTH, int WINDOW_HEIGHT, SDL_Window* window, ZoomAndPanning& moving){
     if (initalizeGPU(window, WINDOW_WIDTH, WINDOW_HEIGHT) == -1) return -1;
     if (initializeRendering(WINDOW_WIDTH, WINDOW_HEIGHT) == -1) return -1;
 
     // Used to evaluate the function
-    evalute = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
+    evaluate = CreateComputeProgram(CompileShader(LoadFile("shaders\\evaluate.comp.glsl"), GL_COMPUTE_SHADER));
     combine = CreateComputeProgram(CompileShader(LoadFile("shaders\\combine.comp.glsl"), GL_COMPUTE_SHADER));
 
-    if (evalute == -1 || combine == -1) return -1;
+    if (evaluate == -1 || combine == -1) return -1;
 
     // Center the view at the start
     moving.zoom = 1.0 / 20.0;
@@ -442,10 +442,21 @@ int initializeEverything(GLuint& evalute, GLuint& combine, int WINDOW_WIDTH, int
     return 1;
 }
 
-void resizeWindow(int WINDOW_WIDTH, int WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window, SDL_FPoint midP){
+void resizeWindow(SDL_Event event, float& WINDOW_WIDTH, float& WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window){
+    // Calculate the midpoint of the previous window
+    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
+
+    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
+                        (moving.top_left.y + bottom_right.y) / 2.0f};
+
+    // Update windows size
+    WINDOW_WIDTH  = event.window.data1;
+    WINDOW_HEIGHT = event.window.data2;
+
     GPUResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
     rendererResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
 
+    // Center our view at the previous windows midpoint
     moving.top_left.x = midP.x - moving.zoom * (WINDOW_WIDTH / 2);
     moving.top_left.y = midP.y - moving.zoom * (WINDOW_HEIGHT / 2);
 
@@ -501,15 +512,7 @@ int main(int argc, char* argv[]){
                     break;
                 }
                 case SDL_EVENT_WINDOW_RESIZED: {
-                    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
-
-                    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
-                                       (moving.top_left.y + bottom_right.y) / 2.0f};
-
-                    WINDOW_WIDTH  = event.window.data1;
-                    WINDOW_HEIGHT = event.window.data2;
-
-                    resizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT, moving, window, midP);
+                    resizeWindow(event, WINDOW_WIDTH, WINDOW_HEIGHT, moving, window);
                     break;
                 }
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
