@@ -22,4 +22,7 @@ C:.
 ├───include
 ├───lib
 └───glad
+      glad.c
+      glad.h
+      khrplatform.h
 ```
