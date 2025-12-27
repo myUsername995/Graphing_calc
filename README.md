@@ -1,4 +1,4 @@
-## Dependencies ##
+## Dependencies (Needed only for compilaton) ##
 - SDL3 -> include and lib folders
 - glad -> glad.h, glad.c, khrplatform.h
 
