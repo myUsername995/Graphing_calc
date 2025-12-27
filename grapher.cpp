@@ -74,6 +74,7 @@ gridWidth and height -> defines the width and height of the grids in screen spac
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <vector>
+#include <array>
 #include <string>
 #include <sstream>
 #include <iomanip>

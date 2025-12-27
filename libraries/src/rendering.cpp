@@ -27,7 +27,6 @@ The combine shader looks at all the comparisons, and then renders the resulting 
 #include <sstream>
 #include "rendering.hpp"
 #include "GPU.hpp"
-#include "time.hpp"
 
 static int W, H, CORNER_W, CORNER_H;
 GLuint screenShader;

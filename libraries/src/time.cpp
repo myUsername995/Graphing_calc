@@ -5,7 +5,7 @@ How to use: use an expression like this at the start: Clock clk = begin();
 and then use an expression like this at the end: double time = end(clk);
 It will always return in milliseconds.
 
-CalculateFPS: You can call the calculateFPS function with a time that you measured between the start of one frame and the end of one frame 
+calculateFPS(): You can call the calculateFPS function with a time that you measured between the start of one frame and the end of one frame 
 (dt), and it will give you back an FPS count. If you pass more values the FPS value becomes more accurate, because each dt is saved in an 
 array (up until a certain size), and they're averaged.
 */

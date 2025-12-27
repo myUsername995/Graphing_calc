@@ -1,7 +1,7 @@
 /*
 HOW TO USE: 
--Expression parseInput(str): pass the string into this function, and it will return an expression that can be evaluated
--double eval(Expression): Evaluates an expression. For this to work the expression has to be already compiled. 
+-parseInput(): pass the string into this function, and it will return an expression that can be evaluated
+-eval(): Evaluates an expression. For this to work the expression has to be already compiled. 
 Additionally you can pass variables using the assignVariables() function before you call eval(), and it will evaluate the function 
 with those values.
 
@@ -14,16 +14,16 @@ Constants (provided by this library):
 -pi (3.141592)
 
 Helpful functions:
--void assignValue(variable, value) -> assigns a value to a variable
--double getValue(variable) -> returns the value of a variable
+-assignValue() -> assigns a value to a variable
+-getValue() -> returns the value of a variable
 
--bool isConstant(variable) -> returns whether a variable is constant or not
--void setToConstant(variable) -> sets a variable to constant (once you compile your input it can't change)
--void setToVariable(variable) -> sets a variable to be variable
+-isConstant() -> returns whether a variable is constant or not
+-setToConstant() -> sets a variable to constant (once you compile your input it can't change)
+-setToVariable() -> sets a variable to be variable
 
--void resetVariables() -> clears the hashtable, essentially resetting every variables value to 0
+-resetVariables() -> clears the hashtable, essentially resetting every variables value to 0
 
--void printErrors() -> prints the errors (if any) from the last compiled input
+-printErrors() -> prints the errors (if any) from the last compiled input
 
 HOW IT WORKS: 
 It uses Pratt parsing to evaluate the function at first and it creates a tree. After that, I convert this tree to a postfix notation, 
@@ -55,8 +55,8 @@ didn't bother with.
 #include <stdbool.h>
 #include <algorithm>
 #include <unordered_map>
+#include <iostream>
 #include "expression.hpp"
-#include "time.hpp"
 
 #define tableSize 256
 // Keep a global hashtable for the variables, and also for constant variables (so that we can fold constants)

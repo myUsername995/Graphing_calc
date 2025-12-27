@@ -4,8 +4,6 @@
 // future can make it.
 
 #include <vector>
-#include <array>
-#include <iostream>
 #include <string>
 #define e 2.7182818
 #define pi 3.141592
