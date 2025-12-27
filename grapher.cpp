@@ -59,6 +59,13 @@ code, and then passed into the compute shader. After this the compute shader get
 This step also happens on every frame, inside the runCompute() function. It's just a compute shader that compares each function per pixel, 
 and colors each pixel accordingly. Boundaries are handled specially, because they should only be drawn if theyre next to a shaded 
 pixel (otherwise when comparing 2 functions, the result might look silly).
+
+The way numbers are rendered are decided by the struct ZoomAndPanning. Here is an explanation of what each member does:
+Zoom -> defines how much to step in world space for 1 step in screen space
+Top left -> defines the cordinates of the top left corner of the world space
+Start pan -> defines where the user first clicked to start panning
+curWorldWidth and Height -> defines the width and height of the world space
+gridWidth and height -> defines the width and height of the grids in screen space
 */
 
 
@@ -428,16 +435,21 @@ int initializeEverything(GLuint& evaluate, GLuint& combine, int WINDOW_WIDTH, in
 
     if (evaluate == -1 || combine == -1) return -1;
 
-    // Center the view at the start
-    moving.zoom = 1.0 / 20.0;
+    // The value at the edge of the screen on the horizontal line
+    float visibleX = 5;
+    float fullWidth = visibleX * 2;
+
+    // Center the view at the start, and set the edges to be 5
+    // Zoom -> How much to step in world space for 1 step in the screen space
+    moving.zoom = fullWidth / WINDOW_WIDTH;
     moving.top_left.x = 0 - moving.zoom * (WINDOW_WIDTH / 2);
     moving.top_left.y = 0 - moving.zoom * (WINDOW_HEIGHT / 2);
     moving.startPan = {0, 0};
 
-    moving.curWorldWidth = WINDOW_WIDTH;
-    moving.curWorldHeight = WINDOW_HEIGHT;
-    moving.gridWidth = WINDOW_WIDTH / 20.0;
-    moving.gridHeight = WINDOW_HEIGHT / 20.0;
+    moving.curWorldWidth = fullWidth;
+    moving.curWorldHeight = fullWidth;
+    moving.gridWidth = fullWidth / 20.0;        // Just a random number, because the number of grids doesn't matter
+    moving.gridHeight = fullWidth / 20.0;
 
     return 1;
 }
@@ -461,6 +473,13 @@ void resizeWindow(SDL_Event event, float& WINDOW_WIDTH, float& WINDOW_HEIGHT, Zo
     moving.top_left.y = midP.y - moving.zoom * (WINDOW_HEIGHT / 2);
 
     moving.startPan = {0, 0};
+}
+
+bool isPowerOfTen(double num) {
+    if (num <= 0) return false;
+
+    double exponent = std::log10(num);
+    return std::fabs(exponent - std::round(exponent)) < 1e-12;
 }
 
 int main(int argc, char* argv[]){
@@ -696,21 +715,44 @@ int main(int argc, char* argv[]){
 
         // Grow the grid
         if (worldWidth >= moving.curWorldWidth / 4 || worldHeight >= moving.curWorldHeight / 4){
-            moving.curWorldWidth *= 2;
-            moving.curWorldHeight *= 2;
+            double scaling;
+
+            // Instead of increasing by 2, increase by 5 / 2
+            // 2 -> 5 -> 10
+            // 20 -> 50 -> 100
+            if (isPowerOfTen(moving.gridWidth / 2.0) || isPowerOfTen(moving.gridHeight / 2.0)){
+                scaling = 2.5;      // 5 / 2
+            }
+            else {
+                scaling = 2;
+            }
+
+            moving.curWorldWidth *= scaling;
+            moving.curWorldHeight *= scaling;
 
             // Update the grid widths
-            moving.gridWidth *= 2;
-            moving.gridHeight *= 2;
+            moving.gridWidth *= scaling;
+            moving.gridHeight *= scaling;
         }
-
         // Shrink the grid
         if (worldWidth < moving.curWorldWidth / 4 || worldHeight < moving.curWorldHeight / 4){
-            moving.curWorldWidth /= 2;
-            moving.curWorldHeight /= 2;
+            double scaling;
 
-            moving.gridWidth /= 2;
-            moving.gridHeight /= 2;
+            // Instead of decreasing by half, decrease by 2 / 5
+            // 10 -> 5 -> 2
+            // 100 -> 50 -> 20
+            if (isPowerOfTen(moving.gridWidth * 2) || isPowerOfTen(moving.gridHeight * 2)){
+                scaling = 0.4;      // 2 / 5
+            }
+            else {
+                scaling = 0.5;      // 1 / 2
+            }
+
+            moving.curWorldWidth *= scaling;
+            moving.curWorldHeight *= scaling;
+
+            moving.gridWidth *= scaling;
+            moving.gridHeight *= scaling;
         }
 
         int startGridX = floor((world_top_left.x) / (moving.gridWidth));
@@ -779,17 +821,27 @@ int main(int argc, char* argv[]){
         for (int i = startGridX; i < endGridX; i++){
             SDL_FPoint p1 = world_to_screen({float(i * moving.gridWidth), 0}, moving.zoom, moving.top_left);
 
+            number = to_string_with_precision(startNum, 3);
+            SDL_FPoint widthHeight = getWidthAndHeight(font, number);
+            float w = widthHeight.x;
+            float h = widthHeight.y;
+
+            // Center on the grid lines
+            p1.x -= w / 2.0f;
+
+            // Center on the X line
             if (horizontalVisible){
-                p1.y -= 10;
+                p1.y -= h / 2.0f;
             }
+            // Move to the top of the screen
             else if (horizontalOnTop){
                 p1.y = 0;
             }
+            // Move to the bottom of the screen
             else if (horizontalOnBottom){
-                p1.y = WINDOW_HEIGHT - 25;
+                p1.y = WINDOW_HEIGHT - h;
             }
 
-            number = to_string_with_precision(startNum, 3);
             startNum += moving.gridWidth;
 
             GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
@@ -806,25 +858,34 @@ int main(int argc, char* argv[]){
         // Draw the numbers on the vertical line
         for (int i = startGridY; i < endGridY; i++){
             // Dont render 0 (horizontal line already rendered it)
-            if (startNum == 0 && verticalVisible){
+            if (fabs(startNum) < 1e-6 && verticalVisible){
                 startNum += moving.gridHeight;
                 continue;
             }
             SDL_FPoint p1 = world_to_screen({0, float(i * moving.gridHeight)}, moving.zoom, moving.top_left);
 
+            number = to_string_with_precision(-startNum, 3);
+            SDL_FPoint widthHeight = getWidthAndHeight(font, number);
+            float w = widthHeight.x;
+            float h = widthHeight.y;
+
+            // Center on the grid lines
+            p1.y -= h / 2.0f;
+
+            // Center on the Y line
             if (verticalVisible){
-                p1.y -= 10;
+                p1.x -= w / 2.0f;
             }
+            // Move to the right of the screen
             else if (verticalOnRight){
-                p1.x = WINDOW_WIDTH - 65;
+                p1.x = WINDOW_WIDTH - w;
             }
+            // Move to the left of the screen
             else if (verticalOnLeft){
                 p1.x = 0;
             }
 
-            number = to_string_with_precision(-startNum, 3);
             startNum += moving.gridHeight;
-
             GPURenderText(font, number, {p1.x, p1.y}, {255, 255, 255, 255});
         }
         }
