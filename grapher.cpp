@@ -312,7 +312,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             assignValue(var, value);
             setToConstant(var);
         }
-        // Handle functions, form: "func f(x) = y <= x"
+        // Handle functions, form: "func f(x): y <= x"
         else if (checkInput(input, "func", 0)){
             int i = 4;
 
@@ -347,6 +347,7 @@ void updateExprs(std::vector<Function>& functions, std::vector<compare>& compari
             std::string expr = input.substr(i);
             exprs.push_back(expr);
         }
+        // Handle comparisons, form: "comp a || a"
         else if (checkInput(input, "comp", 0)){
             int i = 4;
 
@@ -455,17 +456,7 @@ int initializeEverything(GLuint& evaluate, GLuint& combine, int WINDOW_WIDTH, in
     return 1;
 }
 
-void resizeWindow(SDL_Event event, float& WINDOW_WIDTH, float& WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window){
-    // Calculate the midpoint of the previous window
-    SDL_FPoint bottom_right = screen_to_world({WINDOW_WIDTH, WINDOW_HEIGHT}, moving.zoom, moving.top_left);
-
-    SDL_FPoint midP = {(moving.top_left.x + bottom_right.x) / 2.0f, 
-                        (moving.top_left.y + bottom_right.y) / 2.0f};
-
-    // Update windows size
-    WINDOW_WIDTH  = event.window.data1;
-    WINDOW_HEIGHT = event.window.data2;
-
+void resizeWindow(int WINDOW_WIDTH, int WINDOW_HEIGHT, ZoomAndPanning& moving, SDL_Window* window, SDL_FPoint midP){
     GPUResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
     rendererResizeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
 
